@@ -1,0 +1,6 @@
+streamlit
+pandas
+plotly
+sqlalchemy
+mysql-connector-python
+##pip install -r requirements.txt
