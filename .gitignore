@@ -1,0 +1,30 @@
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+.venv/
+
+# Streamlit cache
+.streamlit/
+
+# Database credentials
+latest_db.txt
+.env
+
+# CSV exports
+Project/data/export/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+etl_log_*.txt
