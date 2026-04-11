@@ -2,11 +2,21 @@
 
 A comprehensive **ETL + Analytics Dashboard** application built using **Python, Streamlit, MySQL, and Plotly** that visualizes transaction, user, and insurance data from the PhonePe Pulse dataset.
 
+![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.45+-red?logo=streamlit)
+![MySQL](https://img.shields.io/badge/MySQL-8.0+-orange?logo=mysql)
+![Plotly](https://img.shields.io/badge/Plotly-6.0+-purple?logo=plotly)
+
 ---
 
 ## 📖 Project Overview
 
-PhonePe Pulse provides real-time data on digital payment trends across India. This project extracts data from PhonePe's open-source Pulse repository, transforms it into structured tables, loads it into a MySQL database, and presents it through an interactive Streamlit dashboard.
+PhonePe Pulse provides real-time data on digital payment trends across India. This project:
+
+1. **Extracts** data from PhonePe's open-source Pulse repository (JSON files)
+2. **Transforms** nested JSON into clean, structured tabular format
+3. **Loads** the data into a MySQL database
+4. **Visualizes** the data through an interactive Streamlit dashboard with 7+ chart types
 
 ### Problem Statement
 - PhonePe Pulse data is stored in **nested JSON files** organized by state, year, and quarter
@@ -14,7 +24,7 @@ PhonePe Pulse provides real-time data on digital payment trends across India. Th
 - Users need an **interactive dashboard** to explore trends, compare states, and analyze patterns
 
 ### Solution
-This application provides a **one-click ETL pipeline** and a **real-time analytics dashboard** with 7+ chart types, interactive filters, and an India map visualization.
+A **one-click ETL pipeline** and a **real-time analytics dashboard** with an India map, interactive filters, and multiple visualization types.
 
 ---
 
@@ -33,18 +43,27 @@ This application provides a **one-click ETL pipeline** and a **real-time analyti
 
 ---
 
-## 🛠️ Tech Stack
+## 📋 Prerequisites
 
-| Technology | Purpose |
-|-----------|---------|
-| **Python 3.10+** | Core programming language |
-| **Streamlit** | Web application framework |
-| **Plotly** | Interactive charts and maps |
-| **Pandas** | Data manipulation and analysis |
-| **MySQL** | Relational database for data storage |
-| **SQLAlchemy** | Database connection and ORM |
-| **mysql-connector-python** | MySQL driver for Python |
+The following software must be installed before running this project:
 
----
+| Software | Version | Download Link |
+|----------|---------|---------------|
+| Python | 3.10 or higher | https://www.python.org/downloads/ |
+| MySQL Server | 8.0 or higher | https://dev.mysql.com/downloads/ |
+| Git | 2.40 or higher | https://git-scm.com/downloads/ |
+| VS Code (Optional) | Latest | https://code.visualstudio.com/ |
 
-## 📁 Project Structure
+### Python Packages Required
+
+| Package | Purpose |
+|---------|---------|
+| streamlit | Web dashboard framework |
+| pandas | Data manipulation |
+| plotly | Charts and India map |
+| sqlalchemy | Database connection engine |
+| mysql-connector-python | MySQL driver for Python |
+
+Install all packages at once:
+```bash
+pip install -r requirements.txt
