@@ -12,15 +12,17 @@ from urllib.parse import quote_plus
 import warnings
 import os
 import json
+import requests
 from datetime import datetime
 
-# Suppress unnecessary warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="PhonePe Pulse", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="PhonePe Pulse",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# --- CUSTOM CSS FOR DARK THEME ---
 st.markdown("""
 <style>
     .stApp { background-color: #1a0b2e; color: white; }
@@ -53,7 +55,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# SECTION 1: CONFIGURATION
+# CONFIGURATION
 # ============================================================
 
 DB_USER = "root"
@@ -61,6 +63,8 @@ DB_PASSWORD = "Endurance@2027"
 DB_HOST = "localhost"
 LATEST_DB_FILE = "latest_db.txt"
 BASE_EXPORT_DIR = r"D:\Data\Project\data\export"
+
+INDIA_GEOJSON_URL = "https://gist.githubusercontent.com/jbrobst/56c13bbbf9d97d187fea01ca62ea5112/raw/e388c4cae20aa53cb5090210a42ebb9b765c0a36/india_states.geojson"
 
 TASKS = [
     {"path": r"Project/data/aggregated/transaction/country/india/state", "category": "aggr_transaction"},
@@ -155,7 +159,7 @@ STATE_COORDS = {
     "gujarat": [22.2587, 71.1924],
     "haryana": [29.0588, 76.0856],
     "himachal-pradesh": [31.1048, 77.1734],
-    "jammu-&-kashmir": [33.7782, 76.5762],
+    "jammu-&-kashmir": [33.5000, 75.3000],
     "jharkhand": [23.6102, 85.2799],
     "karnataka": [15.3173, 75.7139],
     "kerala": [10.8505, 76.2711],
@@ -181,29 +185,44 @@ STATE_COORDS = {
 }
 
 STATE_NAMES = {
-    "andaman-&-nicobar-islands": "Andaman & Nicobar",
+    "andaman-&-nicobar-islands": "Andaman & Nicobar Islands",
     "andhra-pradesh": "Andhra Pradesh",
     "arunachal-pradesh": "Arunachal Pradesh",
-    "assam": "Assam", "bihar": "Bihar",
-    "chandigarh": "Chandigarh", "chhattisgarh": "Chhattisgarh",
-    "dadra-and-nagar-haveli-and-daman-and-diu": "DNH & DD",
-    "delhi": "Delhi", "goa": "Goa", "gujarat": "Gujarat",
-    "haryana": "Haryana", "himachal-pradesh": "Himachal Pradesh",
-    "jammu-&-kashmir": "J & K", "jharkhand": "Jharkhand",
-    "karnataka": "Karnataka", "kerala": "Kerala",
-    "ladakh": "Ladakh", "lakshadweep": "Lakshadweep",
-    "madhya-pradesh": "Madhya Pradesh", "maharashtra": "Maharashtra",
-    "manipur": "Manipur", "meghalaya": "Meghalaya",
-    "mizoram": "Mizoram", "nagaland": "Nagaland",
-    "odisha": "Odisha", "puducherry": "Puducherry",
-    "punjab": "Punjab", "rajasthan": "Rajasthan",
-    "sikkim": "Sikkim", "tamil-nadu": "Tamil Nadu",
-    "telangana": "Telangana", "tripura": "Tripura",
-    "uttar-pradesh": "Uttar Pradesh", "uttarakhand": "Uttarakhand",
+    "assam": "Assam",
+    "bihar": "Bihar",
+    "chandigarh": "Chandigarh",
+    "chhattisgarh": "Chhattisgarh",
+    "dadra-and-nagar-haveli-and-daman-and-diu": "Dadra and Nagar Haveli and Daman and Diu",
+    "delhi": "Delhi",
+    "goa": "Goa",
+    "gujarat": "Gujarat",
+    "haryana": "Haryana",
+    "himachal-pradesh": "Himachal Pradesh",
+    "jammu-&-kashmir": "Jammu & Kashmir",
+    "jharkhand": "Jharkhand",
+    "karnataka": "Karnataka",
+    "kerala": "Kerala",
+    "ladakh": "Ladakh",
+    "lakshadweep": "Lakshadweep",
+    "madhya-pradesh": "Madhya Pradesh",
+    "maharashtra": "Maharashtra",
+    "manipur": "Manipur",
+    "meghalaya": "Meghalaya",
+    "mizoram": "Mizoram",
+    "nagaland": "Nagaland",
+    "odisha": "Odisha",
+    "puducherry": "Puducherry",
+    "punjab": "Punjab",
+    "rajasthan": "Rajasthan",
+    "sikkim": "Sikkim",
+    "tamil-nadu": "Tamil Nadu",
+    "telangana": "Telangana",
+    "tripura": "Tripura",
+    "uttar-pradesh": "Uttar Pradesh",
+    "uttarakhand": "Uttarakhand",
     "west-bengal": "West Bengal"
 }
 
-# Plotly dark theme template used across all charts
 CHART_TEMPLATE = {
     "paper_bgcolor": "rgba(0,0,0,0)",
     "plot_bgcolor": "rgba(0,0,0,0)",
@@ -211,12 +230,12 @@ CHART_TEMPLATE = {
     "margin": {"r": 20, "t": 40, "l": 20, "b": 20}
 }
 
+
 # ============================================================
-# SECTION 2: ETL FUNCTIONS
+# ETL FUNCTIONS
 # ============================================================
 
 def get_columns(category):
-    """Returns the correct column structure based on the data category."""
     if category in ["aggr_transaction", "aggr_insurance"]:
         return {"State": [], "Year": [], "Quarter": [], "Transaction_type": [],
                 "Transaction_count": [], "Transaction_amount": []}
@@ -238,9 +257,11 @@ def get_columns(category):
 
 
 def process_category(path_arg, category):
-    """EXTRACT + TRANSFORM: Reads JSON files and returns a DataFrame."""
     path = os.path.abspath(path_arg)
     clm = get_columns(category)
+
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Path not found: {path}")
 
     for state in os.listdir(path):
         state_path = os.path.join(path, state)
@@ -253,6 +274,7 @@ def process_category(path_arg, category):
             for file in os.listdir(year_path):
                 if not file.endswith(".json"):
                     continue
+
                 with open(os.path.join(year_path, file), "r", encoding="utf-8") as f:
                     data_points = json.load(f)
 
@@ -262,41 +284,41 @@ def process_category(path_arg, category):
                 quarter = int(os.path.splitext(file)[0])
 
                 if category in ["aggr_transaction", "aggr_insurance"]:
-                    for item in data.get("transactionData", []):
-                        p = item.get("paymentInstruments", [{}])[0]
+                    for item in data.get("transactionData", []) or []:
+                        p = (item.get("paymentInstruments") or [{}])[0]
                         clm["State"].append(state)
-                        clm["Year"].append(year)
+                        clm["Year"].append(int(year))
                         clm["Quarter"].append(quarter)
                         clm["Transaction_type"].append(item.get("name"))
-                        clm["Transaction_count"].append(p.get("count"))
-                        clm["Transaction_amount"].append(p.get("amount"))
+                        clm["Transaction_count"].append(p.get("count", 0))
+                        clm["Transaction_amount"].append(p.get("amount", 0))
 
                 elif category == "aggr_user":
                     u = data.get("aggregated", {}).get("registeredUsers", 0)
                     for device in data.get("usersByDevice") or []:
                         clm["State"].append(state)
-                        clm["Year"].append(year)
+                        clm["Year"].append(int(year))
                         clm["Quarter"].append(quarter)
-                        clm["Transaction_count"].append(device.get("count"))
+                        clm["Transaction_count"].append(device.get("count", 0))
                         clm["Transaction_user"].append(u)
                         clm["Transaction_brand"].append(device.get("brand"))
-                        clm["Transaction_percentage"].append(device.get("percentage"))
+                        clm["Transaction_percentage"].append(device.get("percentage", 0))
 
                 elif category in ["map_insurance_hover", "map_transaction_hover"]:
                     for item in data.get("hoverDataList") or []:
                         for m in item.get("metric") or []:
                             clm["State"].append(state)
-                            clm["Year"].append(year)
+                            clm["Year"].append(int(year))
                             clm["Quarter"].append(quarter)
                             clm["District"].append(item.get("name"))
                             clm["Metric_type"].append(m.get("type"))
-                            clm["Transaction_count"].append(m.get("count"))
-                            clm["Transaction_amount"].append(m.get("amount"))
+                            clm["Transaction_count"].append(m.get("count", 0))
+                            clm["Transaction_amount"].append(m.get("amount", 0))
 
                 elif category == "map_user_hover":
                     for district, metrics in (data.get("hoverData") or {}).items():
                         clm["State"].append(state)
-                        clm["Year"].append(year)
+                        clm["Year"].append(int(year))
                         clm["Quarter"].append(quarter)
                         clm["District"].append(district)
                         clm["Registered_users"].append(metrics.get("registeredUsers", 0))
@@ -306,35 +328,35 @@ def process_category(path_arg, category):
                     for item in data.get("districts") or []:
                         m = item.get("metric") or {}
                         clm["State"].append(state)
-                        clm["Year"].append(year)
+                        clm["Year"].append(int(year))
                         clm["Quarter"].append(quarter)
                         clm["Level"].append("district")
                         clm["EntityName"].append(item.get("entityName"))
                         clm["Metric_type"].append(m.get("type"))
-                        clm["Transaction_count"].append(m.get("count"))
-                        clm["Transaction_amount"].append(m.get("amount"))
+                        clm["Transaction_count"].append(m.get("count", 0))
+                        clm["Transaction_amount"].append(m.get("amount", 0))
                     for item in data.get("pincodes") or []:
                         m = item.get("metric") or {}
                         clm["State"].append(state)
-                        clm["Year"].append(year)
+                        clm["Year"].append(int(year))
                         clm["Quarter"].append(quarter)
                         clm["Level"].append("pincode")
                         clm["EntityName"].append(item.get("entityName"))
                         clm["Metric_type"].append(m.get("type"))
-                        clm["Transaction_count"].append(m.get("count"))
-                        clm["Transaction_amount"].append(m.get("amount"))
+                        clm["Transaction_count"].append(m.get("count", 0))
+                        clm["Transaction_amount"].append(m.get("amount", 0))
 
                 elif category == "top_user":
                     for item in data.get("districts") or []:
                         clm["State"].append(state)
-                        clm["Year"].append(year)
+                        clm["Year"].append(int(year))
                         clm["Quarter"].append(quarter)
                         clm["Level"].append("district")
                         clm["Name"].append(item.get("name"))
                         clm["Registered_users"].append(item.get("registeredUsers", 0))
                     for item in data.get("pincodes") or []:
                         clm["State"].append(state)
-                        clm["Year"].append(year)
+                        clm["Year"].append(int(year))
                         clm["Quarter"].append(quarter)
                         clm["Level"].append("pincode")
                         clm["Name"].append(item.get("name"))
@@ -344,7 +366,6 @@ def process_category(path_arg, category):
 
 
 def export_csv(df, category):
-    """Saves the DataFrame as a CSV file."""
     folder = os.path.join(BASE_EXPORT_DIR, category)
     os.makedirs(folder, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -354,13 +375,11 @@ def export_csv(df, category):
 
 
 def load_to_mysql(df, table_name, engine):
-    """LOAD: Inserts DataFrame rows into MySQL."""
     if df.empty:
         return 0
     cols = ", ".join(f"`{c}`" for c in df.columns)
     placeholders = ", ".join([f":{c}" for c in df.columns])
     query = text(f"INSERT INTO `{table_name}` ({cols}) VALUES ({placeholders})")
-
     with engine.connect() as conn:
         for _, row in df.iterrows():
             row_dict = {c: (None if pd.isna(row[c]) else row[c]) for c in df.columns}
@@ -370,7 +389,6 @@ def load_to_mysql(df, table_name, engine):
 
 
 def run_etl_pipeline(status_container):
-    """Runs the complete ETL pipeline."""
     db_name = f"phone_pe_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     encoded_password = quote_plus(DB_PASSWORD)
 
@@ -395,7 +413,7 @@ def run_etl_pipeline(status_container):
         try:
             status_container.info(f"Processing: {category}...")
             df = process_category(task["path"], category)
-            csv_path = export_csv(df, category)
+            export_csv(df, category)
             rows_loaded = load_to_mysql(df, table_name, engine)
             status_container.success(f"✅ {category}: {rows_loaded} rows → {table_name}")
         except Exception as e:
@@ -409,11 +427,10 @@ def run_etl_pipeline(status_container):
 
 
 # ============================================================
-# SECTION 3: DASHBOARD HELPER FUNCTIONS
+# DASHBOARD HELPER FUNCTIONS
 # ============================================================
 
 def get_latest_db_name():
-    """Reads the latest database name from the text file."""
     if os.path.exists(LATEST_DB_FILE):
         with open(LATEST_DB_FILE, "r", encoding="utf-8") as f:
             return f.read().strip()
@@ -421,7 +438,6 @@ def get_latest_db_name():
 
 
 def get_engine():
-    """Creates a SQLAlchemy engine connected to the latest database."""
     db_name = get_latest_db_name()
     if not db_name:
         return None
@@ -430,7 +446,6 @@ def get_engine():
 
 
 def run_query(query):
-    """Executes a SQL query and returns a DataFrame."""
     try:
         engine = get_engine()
         if engine is None:
@@ -444,51 +459,110 @@ def run_query(query):
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=3600)
+def load_india_geojson():
+    try:
+        response = requests.get(INDIA_GEOJSON_URL, timeout=15)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error(f"Failed to load India GeoJSON. Status: {response.status_code}")
+            return None
+    except Exception as e:
+        st.error(f"Error loading India GeoJSON: {e}")
+        return None
+
+
 def create_india_map(df):
-    """Creates an interactive bubble map of India."""
     df = df.copy()
-    df["lat"] = df["State"].map(lambda x: STATE_COORDS.get(x, [0, 0])[0])
-    df["lon"] = df["State"].map(lambda x: STATE_COORDS.get(x, [0, 0])[1])
+
+    if df.empty or "State" not in df.columns or "Value" not in df.columns or "Count" not in df.columns:
+        return go.Figure()
+
+    india_geojson = load_india_geojson()
+    if india_geojson is None:
+        return go.Figure()
+
+    df["lat"] = df["State"].map(lambda x: STATE_COORDS.get(x, [None, None])[0])
+    df["lon"] = df["State"].map(lambda x: STATE_COORDS.get(x, [None, None])[1])
     df["State_Name"] = df["State"].map(lambda x: STATE_NAMES.get(x, x))
+    df = df.dropna(subset=["lat", "lon"])
+
+    if df.empty:
+        return go.Figure()
 
     max_val = df["Value"].max()
     min_val = df["Value"].min()
     if max_val == min_val:
-        df["bubble_size"] = 20
+        df["bubble_size"] = 12
     else:
-        df["bubble_size"] = 10 + 40 * (df["Value"] - min_val) / (max_val - min_val)
+        df["bubble_size"] = 6 + 18 * (df["Value"] - min_val) / (max_val - min_val)
 
     fig = go.Figure()
+
+    fig.add_trace(go.Choropleth(
+        geojson=india_geojson,
+        featureidkey="properties.ST_NM",
+        locations=df["State_Name"],
+        z=[1] * len(df),
+        showscale=False,
+        marker_line_color="white",
+        marker_line_width=0.8,
+        colorscale=[[0, "#2b144d"], [1, "#2b144d"]],
+        hoverinfo="skip"
+    ))
+
     fig.add_trace(go.Scattergeo(
-        lat=df["lat"], lon=df["lon"],
+        lat=df["lat"],
+        lon=df["lon"],
+        mode="markers",
         text=df.apply(
-            lambda row: f"<b>{row['State_Name']}</b><br>Value: {row['Value']:,.0f}<br>Count: {row['Count']:,.0f}",
-            axis=1),
+            lambda row: (
+                f"<b>{row['State_Name']}</b><br>"
+                f"Value: {row['Value']:,.0f}<br>"
+                f"Count: {row['Count']:,.0f}"
+            ),
+            axis=1
+        ),
         hoverinfo="text",
-        marker=dict(size=df["bubble_size"], color=df["Value"], colorscale="Viridis",
-                    showscale=False, line=dict(width=0.5, color="white"), opacity=0.85)
+        marker=dict(
+            size=df["bubble_size"],
+            color=df["Value"],
+            colorscale="Viridis",
+            showscale=False,
+            opacity=0.88
+        )
     ))
 
     fig.update_geos(
-        visible=True, resolution=50, scope="asia",
-        showcountries=True, countrycolor="white",
-        showsubunits=True, showcoastlines=True, coastlinecolor="white",
-        showland=True, landcolor="#2b144d",
-        showocean=True, oceancolor="#1a0b2e",
-        showlakes=False, bgcolor="rgba(0,0,0,0)",
-        lonaxis=dict(range=[67, 98]), lataxis=dict(range=[6, 38]),
-        projection_type="mercator"
+        fitbounds="locations",
+        visible=False,
+        projection_type="mercator",
+        showland=False,
+        showcountries=False,
+        showcoastlines=False,
+        showsubunits=False,
+        showframe=False,
+        bgcolor="rgba(0,0,0,0)"
     )
-    fig.update_layout(**CHART_TEMPLATE, height=600, geo=dict(bgcolor="rgba(0,0,0,0)"))
+
+    fig.update_layout(
+        paper_bgcolor="#1a0b2e",
+        plot_bgcolor="#1a0b2e",
+        geo_bgcolor="#1a0b2e",
+        font={"color": "white"},
+        height=620,
+        margin=dict(l=0, r=0, t=0, b=0)
+    )
+
     return fig
 
 
 # ============================================================
-# SECTION 4: CHART FUNCTIONS (NEW GRAPHS)
+# CHART FUNCTIONS (MODIFIED - Removed right color scale only)
 # ============================================================
 
 def create_bar_chart(df, x, y, title, color=None):
-    """Creates a horizontal bar chart showing top values."""
     fig = px.bar(
         df, x=y, y=x, orientation="h",
         title=title, color=color or y,
@@ -496,16 +570,21 @@ def create_bar_chart(df, x, y, title, color=None):
         text=y
     )
     fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
-    fig.update_layout(**CHART_TEMPLATE, height=400, showlegend=False,
-                      xaxis=dict(showgrid=False), yaxis=dict(showgrid=False))
+    fig.update_layout(
+        **CHART_TEMPLATE, 
+        height=400, 
+        showlegend=False,
+        coloraxis_showscale=False,  # MODIFIED: Remove right color scale
+        xaxis=dict(showgrid=False), 
+        yaxis=dict(showgrid=False)
+    )
     return fig
 
 
 def create_pie_chart(df, names, values, title):
-    """Creates a donut/pie chart showing distribution."""
     fig = px.pie(
         df, names=names, values=values,
-        title=title, hole=0.4,
+        title=title,
         color_discrete_sequence=px.colors.sequential.Viridis
     )
     fig.update_traces(textposition="inside", textinfo="percent+label")
@@ -515,7 +594,6 @@ def create_pie_chart(df, names, values, title):
 
 
 def create_line_chart(df, x, y, title, color=None):
-    """Creates a line chart showing trends over time."""
     fig = px.line(
         df, x=x, y=y, title=title,
         color=color, markers=True,
@@ -527,44 +605,8 @@ def create_line_chart(df, x, y, title, color=None):
     return fig
 
 
-def create_violin_chart(df, x, y, title):
-    """Creates a violin chart showing data distribution."""
-    fig = px.violin(
-        df, x=x, y=y, title=title,
-        box=True, points="all",
-        color_discrete_sequence=["#25d366"]
-    )
-    fig.update_layout(**CHART_TEMPLATE, height=400,
-                      xaxis=dict(showgrid=False),
-                      yaxis=dict(showgrid=True, gridcolor="#3b2a54"))
-    return fig
-
-
-def create_treemap(df, path, values, title):
-    """Creates a treemap showing hierarchical data."""
-    fig = px.treemap(
-        df, path=path, values=values,
-        title=title,
-        color=values,
-        color_continuous_scale="Viridis"
-    )
-    fig.update_layout(**CHART_TEMPLATE, height=400)
-    return fig
-
-
-def create_sunburst(df, path, values, title):
-    """Creates a sunburst chart showing hierarchical relationships."""
-    fig = px.sunburst(
-        df, path=path, values=values,
-        title=title,
-        color_discrete_sequence=px.colors.sequential.Viridis
-    )
-    fig.update_layout(**CHART_TEMPLATE, height=450)
-    return fig
-
-
 # ============================================================
-# SECTION 5: SIDEBAR NAVIGATION
+# SIDEBAR
 # ============================================================
 
 st.sidebar.markdown("## 🟣 PhonePe Pulse")
@@ -585,7 +627,7 @@ else:
 
 
 # ============================================================
-# SECTION 6: PAGE - DASHBOARD (MAP + METRICS)
+# DASHBOARD PAGE
 # ============================================================
 
 if menu == "🏠 Dashboard":
@@ -597,7 +639,7 @@ if menu == "🏠 Dashboard":
     if not db_name:
         st.warning("No database found. Please go to 'Run ETL Pipeline' first.")
     else:
-        col_filters, col_map, col_metrics = st.columns([1, 2.5, 1.2], gap="large")
+        col_filters, col_map, col_metrics = st.columns([1, 3.2, 1.3], gap="medium")
 
         with col_filters:
             st.markdown("### Filters")
@@ -613,7 +655,7 @@ if menu == "🏠 Dashboard":
         elif data_type == "Users":
             map_query = f"SELECT State, SUM(Registered_users) as Value, SUM(App_opens) as Count FROM Map_user WHERE Year={year} AND Quarter={q_num} GROUP BY State"
             cat_query = f"SELECT Transaction_brand as Category, SUM(Transaction_count) as Value FROM Aggregated_user WHERE Year={year} AND Quarter={q_num} GROUP BY Transaction_brand"
-        elif data_type == "Insurance":
+        else:
             map_query = f"SELECT State, SUM(Transaction_amount) as Value, SUM(Transaction_count) as Count FROM Aggregated_insurance WHERE Year={year} AND Quarter={q_num} GROUP BY State"
             cat_query = f"SELECT Transaction_type as Category, SUM(Transaction_count) as Value FROM Aggregated_insurance WHERE Year={year} AND Quarter={q_num} GROUP BY Transaction_type"
 
@@ -645,12 +687,14 @@ if menu == "🏠 Dashboard":
                         avg = total_value / total_count
                         st.markdown(f"<p class='pulse-number'>₹{avg:,.0f}</p>", unsafe_allow_html=True)
                         st.markdown("<p class='pulse-title'>Avg. Transaction Value</p>", unsafe_allow_html=True)
+
                 elif data_type == "Users":
                     st.markdown(f"<p class='pulse-number'>{total_value:,.0f}</p>", unsafe_allow_html=True)
                     st.markdown("<p class='pulse-title'>Total Registered Users</p>", unsafe_allow_html=True)
                     st.markdown(f"<p class='pulse-number'>{total_count:,.0f}</p>", unsafe_allow_html=True)
                     st.markdown("<p class='pulse-title'>App Opens</p>", unsafe_allow_html=True)
-                elif data_type == "Insurance":
+
+                else:
                     st.markdown(f"<p class='pulse-number'>{total_count:,.0f}</p>", unsafe_allow_html=True)
                     st.markdown("<p class='pulse-title'>Total Policies</p>", unsafe_allow_html=True)
                     st.markdown(f"<p class='pulse-number'>₹{total_value:,.0f}</p>", unsafe_allow_html=True)
@@ -659,7 +703,7 @@ if menu == "🏠 Dashboard":
                 st.markdown("<div class='section-header'>Categories</div>", unsafe_allow_html=True)
                 if not df_cat.empty:
                     for _, row in df_cat.iterrows():
-                        cat_name = row["Category"] if row["Category"] else "Unknown"
+                        cat_name = row["Category"] if pd.notna(row["Category"]) and row["Category"] else "Unknown"
                         st.markdown(f"""
                             <div class='category-row'>
                                 <span class='category-name'>{cat_name}</span>
@@ -667,8 +711,8 @@ if menu == "🏠 Dashboard":
                             </div>
                         """, unsafe_allow_html=True)
 
-        # --- Top 10 Rankings ---
         st.markdown("<br>", unsafe_allow_html=True)
+
         if not df_map.empty:
             col_s, col_d, col_p = st.columns(3, gap="large")
 
@@ -677,11 +721,13 @@ if menu == "🏠 Dashboard":
                 top = df_map.nlargest(10, "Value").reset_index(drop=True)
                 top["State_Name"] = top["State"].map(lambda x: STATE_NAMES.get(x, x))
                 for i, row in top.iterrows():
-                    st.markdown(f"""<div class='top-state-row'>
-                        <span class='top-state-rank'>{i+1}.</span>
-                        <span class='top-state-name'>{row['State_Name']}</span>
-                        <span class='top-state-value'>{row['Value']:,.0f}</span>
-                    </div>""", unsafe_allow_html=True)
+                    st.markdown(f"""
+                        <div class='top-state-row'>
+                            <span class='top-state-rank'>{i+1}.</span>
+                            <span class='top-state-name'>{row['State_Name']}</span>
+                            <span class='top-state-value'>{row['Value']:,.0f}</span>
+                        </div>
+                    """, unsafe_allow_html=True)
 
             with col_d:
                 st.markdown("<div class='section-header'>Top 10 Districts</div>", unsafe_allow_html=True)
@@ -694,11 +740,14 @@ if menu == "🏠 Dashboard":
                 df_d = run_query(dq)
                 if not df_d.empty:
                     for i, row in df_d.reset_index(drop=True).iterrows():
-                        st.markdown(f"""<div class='top-state-row'>
-                            <span class='top-state-rank'>{i+1}.</span>
-                            <span class='top-state-name'>{row['District'] or 'Unknown'}</span>
-                            <span class='top-state-value'>{row['Value']:,.0f}</span>
-                        </div>""", unsafe_allow_html=True)
+                        district_name = row["District"] if pd.notna(row["District"]) and row["District"] else "Unknown"
+                        st.markdown(f"""
+                            <div class='top-state-row'>
+                                <span class='top-state-rank'>{i+1}.</span>
+                                <span class='top-state-name'>{district_name}</span>
+                                <span class='top-state-value'>{row['Value']:,.0f}</span>
+                            </div>
+                        """, unsafe_allow_html=True)
 
             with col_p:
                 st.markdown("<div class='section-header'>Top 10 Pincodes</div>", unsafe_allow_html=True)
@@ -711,15 +760,18 @@ if menu == "🏠 Dashboard":
                 df_p = run_query(pq)
                 if not df_p.empty:
                     for i, row in df_p.reset_index(drop=True).iterrows():
-                        st.markdown(f"""<div class='top-state-row'>
-                            <span class='top-state-rank'>{i+1}.</span>
-                            <span class='top-state-name'>{row['EntityName'] or 'Unknown'}</span>
-                            <span class='top-state-value'>{row['Value']:,.0f}</span>
-                        </div>""", unsafe_allow_html=True)
+                        entity_name = row["EntityName"] if pd.notna(row["EntityName"]) and row["EntityName"] else "Unknown"
+                        st.markdown(f"""
+                            <div class='top-state-row'>
+                                <span class='top-state-rank'>{i+1}.</span>
+                                <span class='top-state-name'>{entity_name}</span>
+                                <span class='top-state-value'>{row['Value']:,.0f}</span>
+                            </div>
+                        """, unsafe_allow_html=True)
 
 
 # ============================================================
-# SECTION 7: PAGE - ANALYTICS (ALL GRAPHS)
+# ANALYTICS PAGE (MODIFIED - Removed right color scale only)
 # ============================================================
 
 elif menu == "📈 Analytics":
@@ -731,7 +783,6 @@ elif menu == "📈 Analytics":
     if not db_name:
         st.warning("No database found. Run ETL first.")
     else:
-        # --- Analytics Filters ---
         ac1, ac2, ac3 = st.columns(3)
         with ac1:
             a_type = st.selectbox("Analysis Type", ["Transactions", "Users", "Insurance"], key="a_type")
@@ -742,16 +793,11 @@ elif menu == "📈 Analytics":
 
         st.markdown("---")
 
-        # =============================================
-        # ROW 1: BAR CHART + PIE CHART
-        # =============================================
-
+        # Row 1: Bar Chart + Pie Chart
         r1c1, r1c2 = st.columns(2, gap="large")
 
         with r1c1:
-            # BAR CHART: Top 10 States by Value
             st.markdown("<div class='chart-title'>📊 Top 10 States</div>", unsafe_allow_html=True)
-
             if a_type == "Transactions":
                 bar_query = f"SELECT State, SUM(Transaction_amount) as Value FROM Aggregated_transaction WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY State ORDER BY Value DESC LIMIT 10"
             elif a_type == "Users":
@@ -766,9 +812,7 @@ elif menu == "📈 Analytics":
                 st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
 
         with r1c2:
-            # PIE CHART: Category Distribution
             st.markdown("<div class='chart-title'>🥧 Category Distribution</div>", unsafe_allow_html=True)
-
             if a_type == "Transactions":
                 pie_query = f"SELECT Transaction_type as Category, SUM(Transaction_count) as Value FROM Aggregated_transaction WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY Transaction_type"
             elif a_type == "Users":
@@ -783,18 +827,14 @@ elif menu == "📈 Analytics":
                     fig_pie = create_pie_chart(df_pie, "Category", "Value", f"{a_type} Distribution")
                     st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
 
-        # =============================================
-        # ROW 2: LINE CHART (QUARTERLY TREND)
-        # =============================================
-
+        # Row 2: Line Chart (Full Width)
         st.markdown("<div class='chart-title'>📈 Quarterly Trend Analysis</div>", unsafe_allow_html=True)
-
         if a_type == "Transactions":
-            line_query = f"SELECT Year, Quarter, SUM(Transaction_amount) as Value FROM Aggregated_transaction GROUP BY Year, Quarter ORDER BY Year, Quarter"
+            line_query = "SELECT Year, Quarter, SUM(Transaction_amount) as Value FROM Aggregated_transaction GROUP BY Year, Quarter ORDER BY Year, Quarter"
         elif a_type == "Users":
-            line_query = f"SELECT Year, Quarter, SUM(Registered_users) as Value FROM Map_user GROUP BY Year, Quarter ORDER BY Year, Quarter"
+            line_query = "SELECT Year, Quarter, SUM(Registered_users) as Value FROM Map_user GROUP BY Year, Quarter ORDER BY Year, Quarter"
         else:
-            line_query = f"SELECT Year, Quarter, SUM(Transaction_amount) as Value FROM Aggregated_insurance GROUP BY Year, Quarter ORDER BY Year, Quarter"
+            line_query = "SELECT Year, Quarter, SUM(Transaction_amount) as Value FROM Aggregated_insurance GROUP BY Year, Quarter ORDER BY Year, Quarter"
 
         df_line = run_query(line_query)
         if not df_line.empty:
@@ -802,99 +842,32 @@ elif menu == "📈 Analytics":
             fig_line = create_line_chart(df_line, "Period", "Value", f"{a_type} - Quarterly Trend")
             st.plotly_chart(fig_line, use_container_width=True, config={"displayModeBar": False})
 
-        # =============================================
-        # ROW 3: VIOLIN CHART + TREEMAP
-        # =============================================
+        # Row 3: Year-over-Year Comparison (Full Width) - MODIFIED
+        st.markdown("<div class='chart-title'>📊 Year-over-Year Comparison</div>", unsafe_allow_html=True)
+        if a_type == "Transactions":
+            yoy_query = f"SELECT Year, SUM(Transaction_amount) as Value FROM Aggregated_transaction WHERE Quarter={a_quarter} GROUP BY Year ORDER BY Year"
+        elif a_type == "Users":
+            yoy_query = f"SELECT Year, SUM(Registered_users) as Value FROM Map_user WHERE Quarter={a_quarter} GROUP BY Year ORDER BY Year"
+        else:
+            yoy_query = f"SELECT Year, SUM(Transaction_amount) as Value FROM Aggregated_insurance WHERE Quarter={a_quarter} GROUP BY Year ORDER BY Year"
 
-        r3c1, r3c2 = st.columns(2, gap="large")
-
-        with r3c1:
-            # VIOLIN CHART: Distribution of values across quarters
-            st.markdown("<div class='chart-title'>🎻 Value Distribution by Quarter</div>", unsafe_allow_html=True)
-
-            if a_type == "Transactions":
-                violin_query = f"SELECT State, Quarter, SUM(Transaction_amount) as Value FROM Aggregated_transaction WHERE Year={a_year} GROUP BY State, Quarter"
-            elif a_type == "Users":
-                violin_query = f"SELECT State, Quarter, SUM(Registered_users) as Value FROM Map_user WHERE Year={a_year} GROUP BY State, Quarter"
-            else:
-                violin_query = f"SELECT State, Quarter, SUM(Transaction_amount) as Value FROM Aggregated_insurance WHERE Year={a_year} GROUP BY State, Quarter"
-
-            df_violin = run_query(violin_query)
-            if not df_violin.empty:
-                df_violin["Quarter_Label"] = "Q" + df_violin["Quarter"].astype(str)
-                fig_violin = create_violin_chart(df_violin, "Quarter_Label", "Value",
-                                                  f"{a_type} Distribution - {a_year}")
-                st.plotly_chart(fig_violin, use_container_width=True, config={"displayModeBar": False})
-
-        with r3c2:
-            # TREEMAP: State + Category breakdown
-            st.markdown("<div class='chart-title'>🌳 Treemap - State Breakdown</div>", unsafe_allow_html=True)
-
-            if a_type == "Transactions":
-                tree_query = f"SELECT State, Transaction_type, SUM(Transaction_amount) as Value FROM Aggregated_transaction WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY State, Transaction_type ORDER BY Value DESC LIMIT 50"
-            elif a_type == "Insurance":
-                tree_query = f"SELECT State, Transaction_type, SUM(Transaction_amount) as Value FROM Aggregated_insurance WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY State, Transaction_type ORDER BY Value DESC LIMIT 50"
-            else:
-                tree_query = f"SELECT State, Transaction_brand as Transaction_type, SUM(Transaction_count) as Value FROM Aggregated_user WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY State, Transaction_brand ORDER BY Value DESC LIMIT 50"
-
-            df_tree = run_query(tree_query)
-            if not df_tree.empty:
-                df_tree = df_tree.dropna(subset=["Transaction_type"])
-                df_tree["State_Name"] = df_tree["State"].map(lambda x: STATE_NAMES.get(x, x))
-                if not df_tree.empty:
-                    fig_tree = create_treemap(df_tree, ["State_Name", "Transaction_type"], "Value",
-                                              f"{a_type} Treemap")
-                    st.plotly_chart(fig_tree, use_container_width=True, config={"displayModeBar": False})
-
-        # =============================================
-        # ROW 4: SUNBURST + YEARLY COMPARISON BAR
-        # =============================================
-
-        r4c1, r4c2 = st.columns(2, gap="large")
-
-        with r4c1:
-            # SUNBURST: Hierarchical view
-            st.markdown("<div class='chart-title'>☀️ Sunburst - Hierarchical View</div>", unsafe_allow_html=True)
-
-            if a_type == "Transactions":
-                sun_query = f"SELECT State, Transaction_type, SUM(Transaction_count) as Value FROM Aggregated_transaction WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY State, Transaction_type ORDER BY Value DESC LIMIT 50"
-            elif a_type == "Insurance":
-                sun_query = f"SELECT State, Transaction_type, SUM(Transaction_count) as Value FROM Aggregated_insurance WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY State, Transaction_type ORDER BY Value DESC LIMIT 50"
-            else:
-                sun_query = f"SELECT State, Transaction_brand as Transaction_type, SUM(Transaction_count) as Value FROM Aggregated_user WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY State, Transaction_brand ORDER BY Value DESC LIMIT 50"
-
-            df_sun = run_query(sun_query)
-            if not df_sun.empty:
-                df_sun = df_sun.dropna(subset=["Transaction_type"])
-                df_sun["State_Name"] = df_sun["State"].map(lambda x: STATE_NAMES.get(x, x))
-                if not df_sun.empty:
-                    fig_sun = create_sunburst(df_sun, ["State_Name", "Transaction_type"], "Value",
-                                              f"{a_type} Sunburst")
-                    st.plotly_chart(fig_sun, use_container_width=True, config={"displayModeBar": False})
-
-        with r4c2:
-            # YEARLY COMPARISON: Bar chart comparing all years
-            st.markdown("<div class='chart-title'>📊 Year-over-Year Comparison</div>", unsafe_allow_html=True)
-
-            if a_type == "Transactions":
-                yoy_query = f"SELECT Year, SUM(Transaction_amount) as Value FROM Aggregated_transaction WHERE Quarter={a_quarter} GROUP BY Year ORDER BY Year"
-            elif a_type == "Users":
-                yoy_query = f"SELECT Year, SUM(Registered_users) as Value FROM Map_user WHERE Quarter={a_quarter} GROUP BY Year ORDER BY Year"
-            else:
-                yoy_query = f"SELECT Year, SUM(Transaction_amount) as Value FROM Aggregated_insurance WHERE Quarter={a_quarter} GROUP BY Year ORDER BY Year"
-
-            df_yoy = run_query(yoy_query)
-            if not df_yoy.empty:
-                df_yoy["Year"] = df_yoy["Year"].astype(str)
-                fig_yoy = px.bar(df_yoy, x="Year", y="Value", title=f"Q{a_quarter} - Year Comparison",
-                                 color="Value", color_continuous_scale="Viridis", text="Value")
-                fig_yoy.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
-                fig_yoy.update_layout(**CHART_TEMPLATE, height=400, showlegend=False)
-                st.plotly_chart(fig_yoy, use_container_width=True, config={"displayModeBar": False})
+        df_yoy = run_query(yoy_query)
+        if not df_yoy.empty:
+            df_yoy["Year"] = df_yoy["Year"].astype(str)
+            fig_yoy = px.bar(df_yoy, x="Year", y="Value", title=f"Q{a_quarter} - Year Comparison",
+                             color="Value", color_continuous_scale="Viridis", text="Value")
+            fig_yoy.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+            fig_yoy.update_layout(
+                **CHART_TEMPLATE, 
+                height=400, 
+                showlegend=False,
+                coloraxis_showscale=False  # MODIFIED: Remove right color scale
+            )
+            st.plotly_chart(fig_yoy, use_container_width=True, config={"displayModeBar": False})
 
 
 # ============================================================
-# SECTION 8: PAGE - ETL PIPELINE
+# ETL PIPELINE PAGE
 # ============================================================
 
 elif menu == "🔄 Run ETL Pipeline":
@@ -928,7 +901,7 @@ elif menu == "🔄 Run ETL Pipeline":
 
 
 # ============================================================
-# SECTION 9: PAGE - DATA EXPLORER
+# DATA EXPLORER PAGE
 # ============================================================
 
 elif menu == "📊 Data Explorer":
