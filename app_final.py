@@ -58,8 +58,8 @@ st.markdown("""
 # CONFIGURATION
 # ============================================================
 
-DB_USER = "root"
-DB_PASSWORD = "Endurance@2027"
+DB_USER = "YOUR_USERNAME"
+DB_PASSWORD = "YOUR_PASSWORD"
 DB_HOST = "localhost"
 LATEST_DB_FILE = "latest_db.txt"
 BASE_EXPORT_DIR = r"D:\Data\Project\data\export"
