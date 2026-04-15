@@ -1,71 +1,98 @@
 # ============================================================
-# PHONEPE PULSE - UNIFIED ETL + DASHBOARD APPLICATION
+# PHONEPE PULSE PROJECT - BEGINNER FRIENDLY VERSION
+# This app does 2 main jobs:
+# 1) Read PhonePe Pulse JSON files and load them into MySQL
+# 2) Show a Streamlit dashboard and analytics
 # ============================================================
 
-# --- IMPORTS ---
-import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
-from sqlalchemy import create_engine, text
-from urllib.parse import quote_plus
-import warnings
+# -------------------------
+# IMPORT LIBRARIES
+# -------------------------
 import os
 import json
-import requests
+import warnings
 from datetime import datetime
+from urllib.parse import quote_plus
+
+import pandas as pd
+import requests
+import streamlit as st
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+import plotly.graph_objects as go
+from sqlalchemy import create_engine, text
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
+# -------------------------
+# STREAMLIT PAGE SETTINGS
+# -------------------------
 st.set_page_config(
     page_title="PhonePe Pulse",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# -------------------------
+# SIMPLE APP STYLING
+# -------------------------
 st.markdown("""
 <style>
     .stApp { background-color: #1a0b2e; color: white; }
-    .pulse-number { font-size: 2.2rem; font-weight: 700; color: #25d366; margin-bottom: 0px; }
-    .pulse-title { font-size: 1.1rem; color: #d1d5db; margin-bottom: 15px; }
+    .pulse-number { font-size: 2.1rem; font-weight: 700; color: #25d366; margin-bottom: 0px; }
+    .pulse-title { font-size: 1.0rem; color: #d1d5db; margin-bottom: 15px; }
     .category-row {
         display: flex; justify-content: space-between;
         margin-bottom: 10px; border-bottom: 1px solid #3b2a54; padding-bottom: 5px;
     }
     .category-name { color: white; font-weight: 500; }
     .category-value { color: #25d366; font-weight: bold; }
-    .top-state-row {
+    .top-row {
         display: flex; justify-content: space-between;
         margin-bottom: 8px; border-bottom: 1px solid #3b2a54; padding-bottom: 4px;
     }
-    .top-state-rank { color: #a3a3a3; font-weight: 500; margin-right: 10px; }
-    .top-state-name { color: white; font-weight: 500; flex-grow: 1; }
-    .top-state-value { color: #25d366; font-weight: bold; }
+    .rank { color: #a3a3a3; font-weight: 500; margin-right: 10px; }
+    .name { color: white; font-weight: 500; flex-grow: 1; }
+    .value { color: #25d366; font-weight: bold; }
     .section-header {
-        font-size: 1.4rem; font-weight: 700; color: #25d366;
+        font-size: 1.3rem; font-weight: 700; color: #25d366;
         margin-top: 20px; margin-bottom: 15px;
         border-bottom: 2px solid #25d366; padding-bottom: 5px;
     }
     .chart-title {
-        font-size: 1.3rem; font-weight: 700; color: #25d366;
-        text-align: center; margin-top: 30px; margin-bottom: 10px;
+        font-size: 1.2rem; font-weight: 700; color: #25d366;
+        text-align: center; margin-top: 20px; margin-bottom: 10px;
     }
     header { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
+# -------------------------
+# SEABORN STYLE
+# -------------------------
+sns.set_theme(style="darkgrid", palette="viridis")
+plt.style.use("dark_background")
+
 # ============================================================
-# CONFIGURATION
+# BASIC CONFIGURATION
 # ============================================================
 
+# MySQL details
 DB_USER = "YOUR_USERNAME"
 DB_PASSWORD = "YOUR_PASSWORD"
 DB_HOST = "localhost"
+
+# latest database name will be saved here
 LATEST_DB_FILE = "latest_db.txt"
+
+# csv export folder
 BASE_EXPORT_DIR = r"D:\Data\Project\data\export"
 
+# India map geojson
 INDIA_GEOJSON_URL = "https://gist.githubusercontent.com/jbrobst/56c13bbbf9d97d187fea01ca62ea5112/raw/e388c4cae20aa53cb5090210a42ebb9b765c0a36/india_states.geojson"
 
+# all folder paths we want to process
 TASKS = [
     {"path": r"Project/data/aggregated/transaction/country/india/state", "category": "aggr_transaction"},
     {"path": r"Project/data/aggregated/insurance/country/india/state", "category": "aggr_insurance"},
@@ -78,7 +105,8 @@ TASKS = [
     {"path": r"Project/data/top/user/country/india/state", "category": "top_user"}
 ]
 
-TABLE_MAP = {
+# category to mysql table mapping
+TABLE_NAMES = {
     "aggr_transaction": "Aggregated_transaction",
     "aggr_insurance": "Aggregated_insurance",
     "aggr_user": "Aggregated_user",
@@ -90,61 +118,107 @@ TABLE_MAP = {
     "top_user": "Top_user"
 }
 
-CREATE_TABLE_QUERIES = [
+# create table queries
+CREATE_TABLES = [
     """CREATE TABLE IF NOT EXISTS Aggregated_transaction (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        State VARCHAR(50), Year INT, Quarter INT,
-        Transaction_type VARCHAR(100), Transaction_count BIGINT,
+        State VARCHAR(50),
+        Year INT,
+        Quarter INT,
+        Transaction_type VARCHAR(100),
+        Transaction_count BIGINT,
         Transaction_amount DECIMAL(18,2)
     )""",
+
     """CREATE TABLE IF NOT EXISTS Aggregated_insurance (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        State VARCHAR(50), Year INT, Quarter INT,
-        Transaction_type VARCHAR(50), Transaction_count BIGINT,
+        State VARCHAR(50),
+        Year INT,
+        Quarter INT,
+        Transaction_type VARCHAR(50),
+        Transaction_count BIGINT,
         Transaction_amount DECIMAL(18,2)
     )""",
+
     """CREATE TABLE IF NOT EXISTS Aggregated_user (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        State VARCHAR(50), Year INT, Quarter INT,
-        Transaction_count BIGINT, Transaction_user BIGINT,
-        Transaction_brand VARCHAR(50), Transaction_percentage DECIMAL(10,4)
+        State VARCHAR(50),
+        Year INT,
+        Quarter INT,
+        Transaction_count BIGINT,
+        Transaction_user BIGINT,
+        Transaction_brand VARCHAR(50),
+        Transaction_percentage DECIMAL(10,4)
     )""",
+
     """CREATE TABLE IF NOT EXISTS Map_insurance (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        State VARCHAR(50), Year INT, Quarter INT,
-        District VARCHAR(100), Metric_type VARCHAR(20),
-        Transaction_count BIGINT, Transaction_amount DECIMAL(18,2)
+        State VARCHAR(50),
+        Year INT,
+        Quarter INT,
+        District VARCHAR(100),
+        Metric_type VARCHAR(20),
+        Transaction_count BIGINT,
+        Transaction_amount DECIMAL(18,2)
     )""",
+
     """CREATE TABLE IF NOT EXISTS Map_transaction (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        State VARCHAR(50), Year INT, Quarter INT,
-        District VARCHAR(100), Metric_type VARCHAR(20),
-        Transaction_count BIGINT, Transaction_amount DECIMAL(18,2)
+        State VARCHAR(50),
+        Year INT,
+        Quarter INT,
+        District VARCHAR(100),
+        Metric_type VARCHAR(20),
+        Transaction_count BIGINT,
+        Transaction_amount DECIMAL(18,2)
     )""",
+
     """CREATE TABLE IF NOT EXISTS Map_user (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        State VARCHAR(50), Year INT, Quarter INT,
-        District VARCHAR(100), Registered_users BIGINT, App_opens BIGINT
+        State VARCHAR(50),
+        Year INT,
+        Quarter INT,
+        District VARCHAR(100),
+        Registered_users BIGINT,
+        App_opens BIGINT
     )""",
+
     """CREATE TABLE IF NOT EXISTS top_insurance (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        State VARCHAR(100), Year INT, Quarter INT, `Level` VARCHAR(20),
-        EntityName VARCHAR(100), Metric_type VARCHAR(50),
-        Transaction_count BIGINT, Transaction_amount DECIMAL(20,4)
+        State VARCHAR(100),
+        Year INT,
+        Quarter INT,
+        `Level` VARCHAR(20),
+        EntityName VARCHAR(100),
+        Metric_type VARCHAR(50),
+        Transaction_count BIGINT,
+        Transaction_amount DECIMAL(20,4)
     )""",
+
     """CREATE TABLE IF NOT EXISTS top_map (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        State VARCHAR(100), Year INT, Quarter INT, `Level` VARCHAR(20),
-        EntityName VARCHAR(100), Metric_type VARCHAR(50),
-        Transaction_count BIGINT, Transaction_amount DECIMAL(20,2)
+        State VARCHAR(100),
+        Year INT,
+        Quarter INT,
+        `Level` VARCHAR(20),
+        EntityName VARCHAR(100),
+        Metric_type VARCHAR(50),
+        Transaction_count BIGINT,
+        Transaction_amount DECIMAL(20,2)
     )""",
+
     """CREATE TABLE IF NOT EXISTS Top_user (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        State VARCHAR(50), Year INT, Quarter INT, `Level` VARCHAR(20),
-        Name VARCHAR(50), Registered_users BIGINT
+        State VARCHAR(50),
+        Year INT,
+        Quarter INT,
+        `Level` VARCHAR(20),
+        Name VARCHAR(50),
+        Registered_users BIGINT
     )"""
 ]
 
+# state latitude and longitude for bubble map
 STATE_COORDS = {
     "andaman-&-nicobar-islands": [11.7401, 92.6586],
     "andhra-pradesh": [15.9129, 79.7400],
@@ -184,6 +258,7 @@ STATE_COORDS = {
     "west-bengal": [22.9868, 87.8550]
 }
 
+# proper state names
 STATE_NAMES = {
     "andaman-&-nicobar-islands": "Andaman & Nicobar Islands",
     "andhra-pradesh": "Andhra Pradesh",
@@ -223,266 +298,376 @@ STATE_NAMES = {
     "west-bengal": "West Bengal"
 }
 
-CHART_TEMPLATE = {
-    "paper_bgcolor": "rgba(0,0,0,0)",
-    "plot_bgcolor": "rgba(0,0,0,0)",
-    "font": {"color": "white"},
-    "margin": {"r": 20, "t": 40, "l": 20, "b": 20}
-}
-
-
 # ============================================================
-# ETL FUNCTIONS
-# ============================================================
-
-def get_columns(category):
-    if category in ["aggr_transaction", "aggr_insurance"]:
-        return {"State": [], "Year": [], "Quarter": [], "Transaction_type": [],
-                "Transaction_count": [], "Transaction_amount": []}
-    if category in ["map_insurance_hover", "map_transaction_hover"]:
-        return {"State": [], "Year": [], "Quarter": [], "District": [],
-                "Metric_type": [], "Transaction_count": [], "Transaction_amount": []}
-    if category == "map_user_hover":
-        return {"State": [], "Year": [], "Quarter": [], "District": [],
-                "Registered_users": [], "App_opens": []}
-    if category in ["top_transaction", "top_insurance"]:
-        return {"State": [], "Year": [], "Quarter": [], "Level": [],
-                "EntityName": [], "Metric_type": [], "Transaction_count": [],
-                "Transaction_amount": []}
-    if category == "top_user":
-        return {"State": [], "Year": [], "Quarter": [], "Level": [],
-                "Name": [], "Registered_users": []}
-    return {"State": [], "Year": [], "Quarter": [], "Transaction_count": [],
-            "Transaction_user": [], "Transaction_brand": [], "Transaction_percentage": []}
-
-
-def process_category(path_arg, category):
-    path = os.path.abspath(path_arg)
-    clm = get_columns(category)
-
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Path not found: {path}")
-
-    for state in os.listdir(path):
-        state_path = os.path.join(path, state)
-        if not os.path.isdir(state_path):
-            continue
-        for year in os.listdir(state_path):
-            year_path = os.path.join(state_path, year)
-            if not os.path.isdir(year_path):
-                continue
-            for file in os.listdir(year_path):
-                if not file.endswith(".json"):
-                    continue
-
-                with open(os.path.join(year_path, file), "r", encoding="utf-8") as f:
-                    data_points = json.load(f)
-
-                data = data_points.get("data", {})
-                if data is None:
-                    continue
-                quarter = int(os.path.splitext(file)[0])
-
-                if category in ["aggr_transaction", "aggr_insurance"]:
-                    for item in data.get("transactionData", []) or []:
-                        p = (item.get("paymentInstruments") or [{}])[0]
-                        clm["State"].append(state)
-                        clm["Year"].append(int(year))
-                        clm["Quarter"].append(quarter)
-                        clm["Transaction_type"].append(item.get("name"))
-                        clm["Transaction_count"].append(p.get("count", 0))
-                        clm["Transaction_amount"].append(p.get("amount", 0))
-
-                elif category == "aggr_user":
-                    u = data.get("aggregated", {}).get("registeredUsers", 0)
-                    for device in data.get("usersByDevice") or []:
-                        clm["State"].append(state)
-                        clm["Year"].append(int(year))
-                        clm["Quarter"].append(quarter)
-                        clm["Transaction_count"].append(device.get("count", 0))
-                        clm["Transaction_user"].append(u)
-                        clm["Transaction_brand"].append(device.get("brand"))
-                        clm["Transaction_percentage"].append(device.get("percentage", 0))
-
-                elif category in ["map_insurance_hover", "map_transaction_hover"]:
-                    for item in data.get("hoverDataList") or []:
-                        for m in item.get("metric") or []:
-                            clm["State"].append(state)
-                            clm["Year"].append(int(year))
-                            clm["Quarter"].append(quarter)
-                            clm["District"].append(item.get("name"))
-                            clm["Metric_type"].append(m.get("type"))
-                            clm["Transaction_count"].append(m.get("count", 0))
-                            clm["Transaction_amount"].append(m.get("amount", 0))
-
-                elif category == "map_user_hover":
-                    for district, metrics in (data.get("hoverData") or {}).items():
-                        clm["State"].append(state)
-                        clm["Year"].append(int(year))
-                        clm["Quarter"].append(quarter)
-                        clm["District"].append(district)
-                        clm["Registered_users"].append(metrics.get("registeredUsers", 0))
-                        clm["App_opens"].append(metrics.get("appOpens", 0))
-
-                elif category in ["top_transaction", "top_insurance"]:
-                    for item in data.get("districts") or []:
-                        m = item.get("metric") or {}
-                        clm["State"].append(state)
-                        clm["Year"].append(int(year))
-                        clm["Quarter"].append(quarter)
-                        clm["Level"].append("district")
-                        clm["EntityName"].append(item.get("entityName"))
-                        clm["Metric_type"].append(m.get("type"))
-                        clm["Transaction_count"].append(m.get("count", 0))
-                        clm["Transaction_amount"].append(m.get("amount", 0))
-                    for item in data.get("pincodes") or []:
-                        m = item.get("metric") or {}
-                        clm["State"].append(state)
-                        clm["Year"].append(int(year))
-                        clm["Quarter"].append(quarter)
-                        clm["Level"].append("pincode")
-                        clm["EntityName"].append(item.get("entityName"))
-                        clm["Metric_type"].append(m.get("type"))
-                        clm["Transaction_count"].append(m.get("count", 0))
-                        clm["Transaction_amount"].append(m.get("amount", 0))
-
-                elif category == "top_user":
-                    for item in data.get("districts") or []:
-                        clm["State"].append(state)
-                        clm["Year"].append(int(year))
-                        clm["Quarter"].append(quarter)
-                        clm["Level"].append("district")
-                        clm["Name"].append(item.get("name"))
-                        clm["Registered_users"].append(item.get("registeredUsers", 0))
-                    for item in data.get("pincodes") or []:
-                        clm["State"].append(state)
-                        clm["Year"].append(int(year))
-                        clm["Quarter"].append(quarter)
-                        clm["Level"].append("pincode")
-                        clm["Name"].append(item.get("name"))
-                        clm["Registered_users"].append(item.get("registeredUsers", 0))
-
-    return pd.DataFrame(clm)
-
-
-def export_csv(df, category):
-    folder = os.path.join(BASE_EXPORT_DIR, category)
-    os.makedirs(folder, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filepath = os.path.join(folder, f"{category}_data_{timestamp}.csv")
-    df.to_csv(filepath, index=False)
-    return filepath
-
-
-def load_to_mysql(df, table_name, engine):
-    if df.empty:
-        return 0
-    cols = ", ".join(f"`{c}`" for c in df.columns)
-    placeholders = ", ".join([f":{c}" for c in df.columns])
-    query = text(f"INSERT INTO `{table_name}` ({cols}) VALUES ({placeholders})")
-    with engine.connect() as conn:
-        for _, row in df.iterrows():
-            row_dict = {c: (None if pd.isna(row[c]) else row[c]) for c in df.columns}
-            conn.execute(query, row_dict)
-        conn.commit()
-    return len(df)
-
-
-def run_etl_pipeline(status_container):
-    db_name = f"phone_pe_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    encoded_password = quote_plus(DB_PASSWORD)
-
-    status_container.info("Creating database...")
-    admin_engine = create_engine(f"mysql+mysqlconnector://{DB_USER}:{encoded_password}@{DB_HOST}")
-    with admin_engine.connect() as conn:
-        conn.execute(text(f"CREATE DATABASE `{db_name}`"))
-        conn.commit()
-    admin_engine.dispose()
-
-    engine = create_engine(f"mysql+mysqlconnector://{DB_USER}:{encoded_password}@{DB_HOST}/{db_name}")
-    with engine.connect() as conn:
-        for query in CREATE_TABLE_QUERIES:
-            conn.execute(text(query))
-        conn.commit()
-
-    status_container.success(f"Database `{db_name}` created with all tables.")
-
-    for task in TASKS:
-        category = task["category"]
-        table_name = TABLE_MAP[category]
-        try:
-            status_container.info(f"Processing: {category}...")
-            df = process_category(task["path"], category)
-            export_csv(df, category)
-            rows_loaded = load_to_mysql(df, table_name, engine)
-            status_container.success(f"✅ {category}: {rows_loaded} rows → {table_name}")
-        except Exception as e:
-            status_container.error(f"❌ {category} failed: {e}")
-
-    engine.dispose()
-
-    with open(LATEST_DB_FILE, "w", encoding="utf-8") as f:
-        f.write(db_name)
-    return db_name
-
-
-# ============================================================
-# DASHBOARD HELPER FUNCTIONS
+# DATABASE FUNCTIONS
 # ============================================================
 
 def get_latest_db_name():
+    # this reads the last created database name from a text file
     if os.path.exists(LATEST_DB_FILE):
-        with open(LATEST_DB_FILE, "r", encoding="utf-8") as f:
-            return f.read().strip()
+        with open(LATEST_DB_FILE, "r", encoding="utf-8") as file:
+            return file.read().strip()
     return None
 
 
-def get_engine():
-    db_name = get_latest_db_name()
+def save_latest_db_name(db_name):
+    # save latest database name
+    with open(LATEST_DB_FILE, "w", encoding="utf-8") as file:
+        file.write(db_name)
+
+
+def make_engine(db_name=None):
+    # make mysql connection
+    password = quote_plus(DB_PASSWORD)
+
+    if db_name is None:
+        db_name = get_latest_db_name()
+
     if not db_name:
         return None
-    encoded_password = quote_plus(DB_PASSWORD)
-    return create_engine(f"mysql+mysqlconnector://{DB_USER}:{encoded_password}@{DB_HOST}/{db_name}")
+
+    connection_url = f"mysql+mysqlconnector://{DB_USER}:{password}@{DB_HOST}/{db_name}"
+    return create_engine(connection_url)
 
 
-def run_query(query):
+def run_sql(query):
+    # run sql query and return dataframe
     try:
-        engine = get_engine()
+        engine = make_engine()
         if engine is None:
             st.error("No database found. Please run ETL first.")
             return pd.DataFrame()
+
         df = pd.read_sql(query, engine)
         engine.dispose()
         return df
+
     except Exception as e:
         st.error(f"Database Error: {e}")
         return pd.DataFrame()
 
 
+# ============================================================
+# ETL HELPERS
+# ============================================================
+
+def empty_data_structure(category):
+    # based on category, create empty columns
+    if category in ["aggr_transaction", "aggr_insurance"]:
+        return {
+            "State": [],
+            "Year": [],
+            "Quarter": [],
+            "Transaction_type": [],
+            "Transaction_count": [],
+            "Transaction_amount": []
+        }
+
+    if category in ["map_insurance_hover", "map_transaction_hover"]:
+        return {
+            "State": [],
+            "Year": [],
+            "Quarter": [],
+            "District": [],
+            "Metric_type": [],
+            "Transaction_count": [],
+            "Transaction_amount": []
+        }
+
+    if category == "map_user_hover":
+        return {
+            "State": [],
+            "Year": [],
+            "Quarter": [],
+            "District": [],
+            "Registered_users": [],
+            "App_opens": []
+        }
+
+    if category in ["top_transaction", "top_insurance"]:
+        return {
+            "State": [],
+            "Year": [],
+            "Quarter": [],
+            "Level": [],
+            "EntityName": [],
+            "Metric_type": [],
+            "Transaction_count": [],
+            "Transaction_amount": []
+        }
+
+    if category == "top_user":
+        return {
+            "State": [],
+            "Year": [],
+            "Quarter": [],
+            "Level": [],
+            "Name": [],
+            "Registered_users": []
+        }
+
+    # default structure for aggregated user
+    return {
+        "State": [],
+        "Year": [],
+        "Quarter": [],
+        "Transaction_count": [],
+        "Transaction_user": [],
+        "Transaction_brand": [],
+        "Transaction_percentage": []
+    }
+
+
+def read_one_category(folder_path, category):
+    # this function reads all json files inside one category folder
+    full_path = os.path.abspath(folder_path)
+    data_dict = empty_data_structure(category)
+
+    if not os.path.exists(full_path):
+        raise FileNotFoundError(f"Path not found: {full_path}")
+
+    # loop through states
+    for state in os.listdir(full_path):
+        state_path = os.path.join(full_path, state)
+
+        if not os.path.isdir(state_path):
+            continue
+
+        # loop through years
+        for year in os.listdir(state_path):
+            year_path = os.path.join(state_path, year)
+
+            if not os.path.isdir(year_path):
+                continue
+
+            # loop through quarter files
+            for filename in os.listdir(year_path):
+                if not filename.endswith(".json"):
+                    continue
+
+                file_path = os.path.join(year_path, filename)
+
+                with open(file_path, "r", encoding="utf-8") as f:
+                    json_data = json.load(f)
+
+                data = json_data.get("data", {})
+                if data is None:
+                    continue
+
+                quarter = int(os.path.splitext(filename)[0])
+
+                # aggregated transaction / insurance
+                if category in ["aggr_transaction", "aggr_insurance"]:
+                    for item in data.get("transactionData", []) or []:
+                        payment_info = (item.get("paymentInstruments") or [{}])[0]
+
+                        data_dict["State"].append(state)
+                        data_dict["Year"].append(int(year))
+                        data_dict["Quarter"].append(quarter)
+                        data_dict["Transaction_type"].append(item.get("name"))
+                        data_dict["Transaction_count"].append(payment_info.get("count", 0))
+                        data_dict["Transaction_amount"].append(payment_info.get("amount", 0))
+
+                # aggregated user
+                elif category == "aggr_user":
+                    total_users = data.get("aggregated", {}).get("registeredUsers", 0)
+
+                    for device in data.get("usersByDevice") or []:
+                        data_dict["State"].append(state)
+                        data_dict["Year"].append(int(year))
+                        data_dict["Quarter"].append(quarter)
+                        data_dict["Transaction_count"].append(device.get("count", 0))
+                        data_dict["Transaction_user"].append(total_users)
+                        data_dict["Transaction_brand"].append(device.get("brand"))
+                        data_dict["Transaction_percentage"].append(device.get("percentage", 0))
+
+                # map insurance or map transaction
+                elif category in ["map_insurance_hover", "map_transaction_hover"]:
+                    for item in data.get("hoverDataList") or []:
+                        for metric in item.get("metric") or []:
+                            data_dict["State"].append(state)
+                            data_dict["Year"].append(int(year))
+                            data_dict["Quarter"].append(quarter)
+                            data_dict["District"].append(item.get("name"))
+                            data_dict["Metric_type"].append(metric.get("type"))
+                            data_dict["Transaction_count"].append(metric.get("count", 0))
+                            data_dict["Transaction_amount"].append(metric.get("amount", 0))
+
+                # map user
+                elif category == "map_user_hover":
+                    for district, metrics in (data.get("hoverData") or {}).items():
+                        data_dict["State"].append(state)
+                        data_dict["Year"].append(int(year))
+                        data_dict["Quarter"].append(quarter)
+                        data_dict["District"].append(district)
+                        data_dict["Registered_users"].append(metrics.get("registeredUsers", 0))
+                        data_dict["App_opens"].append(metrics.get("appOpens", 0))
+
+                # top transaction / top insurance
+                elif category in ["top_transaction", "top_insurance"]:
+                    for item in data.get("districts") or []:
+                        metric = item.get("metric") or {}
+                        data_dict["State"].append(state)
+                        data_dict["Year"].append(int(year))
+                        data_dict["Quarter"].append(quarter)
+                        data_dict["Level"].append("district")
+                        data_dict["EntityName"].append(item.get("entityName"))
+                        data_dict["Metric_type"].append(metric.get("type"))
+                        data_dict["Transaction_count"].append(metric.get("count", 0))
+                        data_dict["Transaction_amount"].append(metric.get("amount", 0))
+
+                    for item in data.get("pincodes") or []:
+                        metric = item.get("metric") or {}
+                        data_dict["State"].append(state)
+                        data_dict["Year"].append(int(year))
+                        data_dict["Quarter"].append(quarter)
+                        data_dict["Level"].append("pincode")
+                        data_dict["EntityName"].append(item.get("entityName"))
+                        data_dict["Metric_type"].append(metric.get("type"))
+                        data_dict["Transaction_count"].append(metric.get("count", 0))
+                        data_dict["Transaction_amount"].append(metric.get("amount", 0))
+
+                # top user
+                elif category == "top_user":
+                    for item in data.get("districts") or []:
+                        data_dict["State"].append(state)
+                        data_dict["Year"].append(int(year))
+                        data_dict["Quarter"].append(quarter)
+                        data_dict["Level"].append("district")
+                        data_dict["Name"].append(item.get("name"))
+                        data_dict["Registered_users"].append(item.get("registeredUsers", 0))
+
+                    for item in data.get("pincodes") or []:
+                        data_dict["State"].append(state)
+                        data_dict["Year"].append(int(year))
+                        data_dict["Quarter"].append(quarter)
+                        data_dict["Level"].append("pincode")
+                        data_dict["Name"].append(item.get("name"))
+                        data_dict["Registered_users"].append(item.get("registeredUsers", 0))
+
+    return pd.DataFrame(data_dict)
+
+
+def save_csv(df, category_name):
+    # save each dataframe as csv
+    folder = os.path.join(BASE_EXPORT_DIR, category_name)
+    os.makedirs(folder, exist_ok=True)
+
+    time_now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = os.path.join(folder, f"{category_name}_{time_now}.csv")
+
+    df.to_csv(file_path, index=False)
+    return file_path
+
+
+def insert_dataframe_to_mysql(df, table_name, engine):
+    # insert dataframe rows into mysql table
+    if df.empty:
+        return 0
+
+    columns = ", ".join(f"`{col}`" for col in df.columns)
+    placeholders = ", ".join(f":{col}" for col in df.columns)
+    query = text(f"INSERT INTO `{table_name}` ({columns}) VALUES ({placeholders})")
+
+    with engine.connect() as conn:
+        for _, row in df.iterrows():
+            row_data = {}
+            for col in df.columns:
+                value = row[col]
+                row_data[col] = None if pd.isna(value) else value
+
+            conn.execute(query, row_data)
+
+        conn.commit()
+
+    return len(df)
+
+
+def run_full_etl(status_box):
+    # this function runs the full ETL process
+    new_db_name = f"phone_pe_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    password = quote_plus(DB_PASSWORD)
+
+    # step 1 - create database
+    status_box.info("Creating new MySQL database...")
+    admin_engine = create_engine(f"mysql+mysqlconnector://{DB_USER}:{password}@{DB_HOST}")
+
+    with admin_engine.connect() as conn:
+        conn.execute(text(f"CREATE DATABASE `{new_db_name}`"))
+        conn.commit()
+
+    admin_engine.dispose()
+
+    # step 2 - connect to new database and create tables
+    db_engine = create_engine(f"mysql+mysqlconnector://{DB_USER}:{password}@{DB_HOST}/{new_db_name}")
+
+    with db_engine.connect() as conn:
+        for query in CREATE_TABLES:
+            conn.execute(text(query))
+        conn.commit()
+
+    status_box.success(f"Database created: {new_db_name}")
+
+    # step 3 - read each category and load into mysql
+    for task in TASKS:
+        category = task["category"]
+        folder_path = task["path"]
+        table_name = TABLE_NAMES[category]
+
+        try:
+            status_box.info(f"Reading {category} data...")
+
+            df = read_one_category(folder_path, category)
+
+            save_csv(df, category)
+
+            rows = insert_dataframe_to_mysql(df, table_name, db_engine)
+
+            status_box.success(f"Loaded {rows} rows into {table_name}")
+
+        except Exception as e:
+            status_box.error(f"{category} failed: {e}")
+
+    db_engine.dispose()
+
+    # step 4 - save latest db name
+    save_latest_db_name(new_db_name)
+
+    return new_db_name
+
+
+# ============================================================
+# MAP FUNCTION
+# ============================================================
+
 @st.cache_data(ttl=3600)
 def load_india_geojson():
+    # load india geojson one time and cache it
     try:
         response = requests.get(INDIA_GEOJSON_URL, timeout=15)
         if response.status_code == 200:
             return response.json()
         else:
-            st.error(f"Failed to load India GeoJSON. Status: {response.status_code}")
+            st.error(f"Could not load India geojson. Status code: {response.status_code}")
             return None
     except Exception as e:
-        st.error(f"Error loading India GeoJSON: {e}")
+        st.error(f"Error loading India geojson: {e}")
         return None
 
 
-def create_india_map(df):
+def make_india_map(df):
+    # make india state map with bubbles
+    if df.empty:
+        return go.Figure()
+
+    if "State" not in df.columns or "Value" not in df.columns or "Count" not in df.columns:
+        return go.Figure()
+
+    geojson_data = load_india_geojson()
+    if geojson_data is None:
+        return go.Figure()
+
     df = df.copy()
-
-    if df.empty or "State" not in df.columns or "Value" not in df.columns or "Count" not in df.columns:
-        return go.Figure()
-
-    india_geojson = load_india_geojson()
-    if india_geojson is None:
-        return go.Figure()
-
     df["lat"] = df["State"].map(lambda x: STATE_COORDS.get(x, [None, None])[0])
     df["lon"] = df["State"].map(lambda x: STATE_COORDS.get(x, [None, None])[1])
     df["State_Name"] = df["State"].map(lambda x: STATE_NAMES.get(x, x))
@@ -491,17 +676,19 @@ def create_india_map(df):
     if df.empty:
         return go.Figure()
 
-    max_val = df["Value"].max()
-    min_val = df["Value"].min()
-    if max_val == min_val:
+    max_value = df["Value"].max()
+    min_value = df["Value"].min()
+
+    if max_value == min_value:
         df["bubble_size"] = 12
     else:
-        df["bubble_size"] = 6 + 18 * (df["Value"] - min_val) / (max_val - min_val)
+        df["bubble_size"] = 6 + 18 * (df["Value"] - min_value) / (max_value - min_value)
 
     fig = go.Figure()
 
+    # state background
     fig.add_trace(go.Choropleth(
-        geojson=india_geojson,
+        geojson=geojson_data,
         featureidkey="properties.ST_NM",
         locations=df["State_Name"],
         z=[1] * len(df),
@@ -512,6 +699,7 @@ def create_india_map(df):
         hoverinfo="skip"
     ))
 
+    # bubble points
     fig.add_trace(go.Scattergeo(
         lat=df["lat"],
         lon=df["lon"],
@@ -559,49 +747,85 @@ def create_india_map(df):
 
 
 # ============================================================
-# CHART FUNCTIONS (MODIFIED - Removed right color scale only)
+# SEABORN CHART FUNCTIONS
 # ============================================================
 
-def create_bar_chart(df, x, y, title, color=None):
-    fig = px.bar(
-        df, x=y, y=x, orientation="h",
-        title=title, color=color or y,
-        color_continuous_scale="Viridis",
-        text=y
-    )
-    fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
-    fig.update_layout(
-        **CHART_TEMPLATE, 
-        height=400, 
-        showlegend=False,
-        coloraxis_showscale=False,  # MODIFIED: Remove right color scale
-        xaxis=dict(showgrid=False), 
-        yaxis=dict(showgrid=False)
-    )
+def style_chart(ax, title):
+    # apply same style to all matplotlib charts
+    ax.set_title(title, color="#25d366", fontsize=14, fontweight="bold")
+    ax.set_facecolor("#1a0b2e")
+    ax.figure.set_facecolor("#1a0b2e")
+    ax.tick_params(colors="white")
+    ax.xaxis.label.set_color("white")
+    ax.yaxis.label.set_color("white")
+
+    for spine in ax.spines.values():
+        spine.set_color("#3b2a54")
+
+    ax.grid(color="#3b2a54", alpha=0.4)
+
+
+def make_bar_chart(df, x_col, y_col, title):
+    # horizontal bar chart
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(data=df, x=y_col, y=x_col, ax=ax, palette="viridis")
+    style_chart(ax, title)
+    ax.set_xlabel(y_col)
+    ax.set_ylabel(x_col)
+
+    for container in ax.containers:
+        ax.bar_label(container, fmt="%.0f", color="white", padding=3)
+
+    plt.tight_layout()
     return fig
 
 
-def create_pie_chart(df, names, values, title):
-    fig = px.pie(
-        df, names=names, values=values,
-        title=title,
-        color_discrete_sequence=px.colors.sequential.Viridis
+def make_pie_chart(df, label_col, value_col, title):
+    # pie chart using matplotlib
+    fig, ax = plt.subplots(figsize=(8, 8))
+    colors = sns.color_palette("viridis", len(df))
+
+    ax.pie(
+        df[value_col],
+        labels=df[label_col],
+        autopct="%1.1f%%",
+        startangle=90,
+        colors=colors,
+        textprops={"color": "white"}
     )
-    fig.update_traces(textposition="inside", textinfo="percent+label")
-    fig.update_layout(**CHART_TEMPLATE, height=400, showlegend=True,
-                      legend=dict(font=dict(color="white")))
+
+    ax.set_title(title, color="#25d366", fontsize=14, fontweight="bold")
+    fig.patch.set_facecolor("#1a0b2e")
+    ax.set_facecolor("#1a0b2e")
+
+    plt.tight_layout()
     return fig
 
 
-def create_line_chart(df, x, y, title, color=None):
-    fig = px.line(
-        df, x=x, y=y, title=title,
-        color=color, markers=True,
-        color_discrete_sequence=px.colors.sequential.Viridis
-    )
-    fig.update_layout(**CHART_TEMPLATE, height=400,
-                      xaxis=dict(showgrid=False, title=""),
-                      yaxis=dict(showgrid=True, gridcolor="#3b2a54", title=""))
+def make_line_chart(df, x_col, y_col, title):
+    # line chart
+    fig, ax = plt.subplots(figsize=(12, 5))
+    sns.lineplot(data=df, x=x_col, y=y_col, marker="o", ax=ax, color="#25d366", linewidth=2.5)
+    style_chart(ax, title)
+    ax.set_xlabel(x_col)
+    ax.set_ylabel(y_col)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    return fig
+
+
+def make_year_chart(df, title):
+    # simple year comparison bar chart
+    fig, ax = plt.subplots(figsize=(10, 5))
+    sns.barplot(data=df, x="Year", y="Value", ax=ax, palette="viridis")
+    style_chart(ax, title)
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Value")
+
+    for container in ax.containers:
+        ax.bar_label(container, fmt="%.0f", color="white", padding=3)
+
+    plt.tight_layout()
     return fig
 
 
@@ -612,16 +836,15 @@ def create_line_chart(df, x, y, title, color=None):
 st.sidebar.markdown("## 🟣 PhonePe Pulse")
 st.sidebar.markdown("---")
 
-menu = st.sidebar.radio("Navigate", [
-    "🏠 Dashboard",
-    "📈 Analytics",
-    "🔄 Run ETL Pipeline",
-    "📊 Data Explorer"
-])
+menu = st.sidebar.radio(
+    "Choose Page",
+    ["🏠 Dashboard", "📈 Analytics", "🔄 Run ETL Pipeline", "📊 Data Explorer"]
+)
 
-db_name = get_latest_db_name()
-if db_name:
-    st.sidebar.success(f"Active DB: {db_name}")
+latest_db = get_latest_db_name()
+
+if latest_db:
+    st.sidebar.success(f"Active DB: {latest_db}")
 else:
     st.sidebar.warning("No database found. Run ETL first.")
 
@@ -632,272 +855,481 @@ else:
 
 if menu == "🏠 Dashboard":
 
-    st.markdown("<h1 style='text-align: center; color: white;'>PhonePe Pulse | Explore Data</h1>",
-                unsafe_allow_html=True)
+    st.markdown(
+        "<h1 style='text-align: center; color: white;'>PhonePe Pulse Dashboard</h1>",
+        unsafe_allow_html=True
+    )
     st.markdown("<br>", unsafe_allow_html=True)
 
-    if not db_name:
-        st.warning("No database found. Please go to 'Run ETL Pipeline' first.")
+    if not latest_db:
+        st.warning("No database found. Please run ETL first.")
     else:
-        col_filters, col_map, col_metrics = st.columns([1, 3.2, 1.3], gap="medium")
+        left_col, middle_col, right_col = st.columns([1, 3.2, 1.3], gap="medium")
 
-        with col_filters:
+        # -------------------------
+        # FILTERS
+        # -------------------------
+        with left_col:
             st.markdown("### Filters")
-            data_type = st.selectbox("Data Type", ["Transactions", "Users", "Insurance"])
-            year = st.selectbox("Select Year", [2024, 2023, 2022, 2021, 2020, 2019, 2018])
-            quarter = st.selectbox("Select Quarter", [
-                "Q1 (Jan-Mar)", "Q2 (Apr-Jun)", "Q3 (Jul-Sep)", "Q4 (Oct-Dec)"])
-            q_num = int(quarter[1])
 
-        if data_type == "Transactions":
-            map_query = f"SELECT State, SUM(Transaction_amount) as Value, SUM(Transaction_count) as Count FROM Aggregated_transaction WHERE Year={year} AND Quarter={q_num} GROUP BY State"
-            cat_query = f"SELECT Transaction_type as Category, SUM(Transaction_count) as Value FROM Aggregated_transaction WHERE Year={year} AND Quarter={q_num} GROUP BY Transaction_type"
-        elif data_type == "Users":
-            map_query = f"SELECT State, SUM(Registered_users) as Value, SUM(App_opens) as Count FROM Map_user WHERE Year={year} AND Quarter={q_num} GROUP BY State"
-            cat_query = f"SELECT Transaction_brand as Category, SUM(Transaction_count) as Value FROM Aggregated_user WHERE Year={year} AND Quarter={q_num} GROUP BY Transaction_brand"
+            selected_type = st.selectbox("Data Type", ["Transactions", "Users", "Insurance"])
+            selected_year = st.selectbox("Select Year", [2024, 2023, 2022, 2021, 2020, 2019, 2018])
+            selected_quarter_name = st.selectbox(
+                "Select Quarter",
+                ["Q1 (Jan-Mar)", "Q2 (Apr-Jun)", "Q3 (Jul-Sep)", "Q4 (Oct-Dec)"]
+            )
+            selected_quarter = int(selected_quarter_name[1])
+
+        # -------------------------
+        # SQL QUERIES BASED ON TYPE
+        # -------------------------
+        if selected_type == "Transactions":
+            map_query = f"""
+                SELECT State,
+                       SUM(Transaction_amount) as Value,
+                       SUM(Transaction_count) as Count
+                FROM Aggregated_transaction
+                WHERE Year={selected_year} AND Quarter={selected_quarter}
+                GROUP BY State
+            """
+
+            category_query = f"""
+                SELECT Transaction_type as Category,
+                       SUM(Transaction_count) as Value
+                FROM Aggregated_transaction
+                WHERE Year={selected_year} AND Quarter={selected_quarter}
+                GROUP BY Transaction_type
+            """
+
+        elif selected_type == "Users":
+            map_query = f"""
+                SELECT State,
+                       SUM(Registered_users) as Value,
+                       SUM(App_opens) as Count
+                FROM Map_user
+                WHERE Year={selected_year} AND Quarter={selected_quarter}
+                GROUP BY State
+            """
+
+            category_query = f"""
+                SELECT Transaction_brand as Category,
+                       SUM(Transaction_count) as Value
+                FROM Aggregated_user
+                WHERE Year={selected_year} AND Quarter={selected_quarter}
+                GROUP BY Transaction_brand
+            """
+
         else:
-            map_query = f"SELECT State, SUM(Transaction_amount) as Value, SUM(Transaction_count) as Count FROM Aggregated_insurance WHERE Year={year} AND Quarter={q_num} GROUP BY State"
-            cat_query = f"SELECT Transaction_type as Category, SUM(Transaction_count) as Value FROM Aggregated_insurance WHERE Year={year} AND Quarter={q_num} GROUP BY Transaction_type"
+            map_query = f"""
+                SELECT State,
+                       SUM(Transaction_amount) as Value,
+                       SUM(Transaction_count) as Count
+                FROM Aggregated_insurance
+                WHERE Year={selected_year} AND Quarter={selected_quarter}
+                GROUP BY State
+            """
 
-        df_map = run_query(map_query)
-        df_cat = run_query(cat_query)
+            category_query = f"""
+                SELECT Transaction_type as Category,
+                       SUM(Transaction_count) as Value
+                FROM Aggregated_insurance
+                WHERE Year={selected_year} AND Quarter={selected_quarter}
+                GROUP BY Transaction_type
+            """
 
-        with col_map:
+        df_map = run_sql(map_query)
+        df_category = run_sql(category_query)
+
+        # -------------------------
+        # MAP
+        # -------------------------
+        with middle_col:
             if not df_map.empty:
-                fig = create_india_map(df_map)
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                india_map = make_india_map(df_map)
+                st.plotly_chart(india_map, use_container_width=True, config={"displayModeBar": False})
             else:
-                st.warning(f"No {data_type} data for {year} {quarter}.")
+                st.warning("No data available for selected filters.")
 
-        with col_metrics:
+        # -------------------------
+        # METRICS
+        # -------------------------
+        with right_col:
             if not df_map.empty:
-                st.markdown(f"### {data_type}")
-                st.markdown(f"<p style='color:#a3a3a3;'>All India {data_type} ({year} {quarter[:2]})</p>",
-                            unsafe_allow_html=True)
+                st.markdown(f"### {selected_type}")
+                st.markdown(
+                    f"<p style='color:#a3a3a3;'>All India {selected_type} ({selected_year} Q{selected_quarter})</p>",
+                    unsafe_allow_html=True
+                )
 
                 total_count = df_map["Count"].sum()
                 total_value = df_map["Value"].sum()
 
-                if data_type == "Transactions":
+                if selected_type == "Transactions":
                     st.markdown(f"<p class='pulse-number'>{total_count:,.0f}</p>", unsafe_allow_html=True)
                     st.markdown("<p class='pulse-title'>Total Transactions</p>", unsafe_allow_html=True)
+
                     st.markdown(f"<p class='pulse-number'>₹{total_value:,.0f}</p>", unsafe_allow_html=True)
                     st.markdown("<p class='pulse-title'>Total Payment Value</p>", unsafe_allow_html=True)
+
                     if total_count > 0:
-                        avg = total_value / total_count
-                        st.markdown(f"<p class='pulse-number'>₹{avg:,.0f}</p>", unsafe_allow_html=True)
+                        avg_value = total_value / total_count
+                        st.markdown(f"<p class='pulse-number'>₹{avg_value:,.0f}</p>", unsafe_allow_html=True)
                         st.markdown("<p class='pulse-title'>Avg. Transaction Value</p>", unsafe_allow_html=True)
 
-                elif data_type == "Users":
+                elif selected_type == "Users":
                     st.markdown(f"<p class='pulse-number'>{total_value:,.0f}</p>", unsafe_allow_html=True)
                     st.markdown("<p class='pulse-title'>Total Registered Users</p>", unsafe_allow_html=True)
+
                     st.markdown(f"<p class='pulse-number'>{total_count:,.0f}</p>", unsafe_allow_html=True)
                     st.markdown("<p class='pulse-title'>App Opens</p>", unsafe_allow_html=True)
 
                 else:
                     st.markdown(f"<p class='pulse-number'>{total_count:,.0f}</p>", unsafe_allow_html=True)
                     st.markdown("<p class='pulse-title'>Total Policies</p>", unsafe_allow_html=True)
+
                     st.markdown(f"<p class='pulse-number'>₹{total_value:,.0f}</p>", unsafe_allow_html=True)
                     st.markdown("<p class='pulse-title'>Total Premium Value</p>", unsafe_allow_html=True)
 
                 st.markdown("<div class='section-header'>Categories</div>", unsafe_allow_html=True)
-                if not df_cat.empty:
-                    for _, row in df_cat.iterrows():
-                        cat_name = row["Category"] if pd.notna(row["Category"]) and row["Category"] else "Unknown"
+
+                if not df_category.empty:
+                    for _, row in df_category.iterrows():
+                        category_name = row["Category"] if pd.notna(row["Category"]) and row["Category"] else "Unknown"
                         st.markdown(f"""
                             <div class='category-row'>
-                                <span class='category-name'>{cat_name}</span>
+                                <span class='category-name'>{category_name}</span>
                                 <span class='category-value'>{row['Value']:,.0f}</span>
                             </div>
                         """, unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
 
+        # -------------------------
+        # TOP STATES / DISTRICTS / PINCODES
+        # -------------------------
         if not df_map.empty:
-            col_s, col_d, col_p = st.columns(3, gap="large")
+            c1, c2, c3 = st.columns(3, gap="large")
 
-            with col_s:
+            # top states
+            with c1:
                 st.markdown("<div class='section-header'>Top 10 States</div>", unsafe_allow_html=True)
-                top = df_map.nlargest(10, "Value").reset_index(drop=True)
-                top["State_Name"] = top["State"].map(lambda x: STATE_NAMES.get(x, x))
-                for i, row in top.iterrows():
+
+                top_states = df_map.nlargest(10, "Value").reset_index(drop=True)
+                top_states["State_Name"] = top_states["State"].map(lambda x: STATE_NAMES.get(x, x))
+
+                for i, row in top_states.iterrows():
                     st.markdown(f"""
-                        <div class='top-state-row'>
-                            <span class='top-state-rank'>{i+1}.</span>
-                            <span class='top-state-name'>{row['State_Name']}</span>
-                            <span class='top-state-value'>{row['Value']:,.0f}</span>
+                        <div class='top-row'>
+                            <span class='rank'>{i+1}.</span>
+                            <span class='name'>{row['State_Name']}</span>
+                            <span class='value'>{row['Value']:,.0f}</span>
                         </div>
                     """, unsafe_allow_html=True)
 
-            with col_d:
+            # top districts
+            with c2:
                 st.markdown("<div class='section-header'>Top 10 Districts</div>", unsafe_allow_html=True)
-                if data_type == "Transactions":
-                    dq = f"SELECT District, SUM(Transaction_count) as Value FROM Map_transaction WHERE Year={year} AND Quarter={q_num} GROUP BY District ORDER BY Value DESC LIMIT 10"
-                elif data_type == "Users":
-                    dq = f"SELECT District, SUM(Registered_users) as Value FROM Map_user WHERE Year={year} AND Quarter={q_num} GROUP BY District ORDER BY Value DESC LIMIT 10"
+
+                if selected_type == "Transactions":
+                    district_query = f"""
+                        SELECT District, SUM(Transaction_count) as Value
+                        FROM Map_transaction
+                        WHERE Year={selected_year} AND Quarter={selected_quarter}
+                        GROUP BY District
+                        ORDER BY Value DESC
+                        LIMIT 10
+                    """
+                elif selected_type == "Users":
+                    district_query = f"""
+                        SELECT District, SUM(Registered_users) as Value
+                        FROM Map_user
+                        WHERE Year={selected_year} AND Quarter={selected_quarter}
+                        GROUP BY District
+                        ORDER BY Value DESC
+                        LIMIT 10
+                    """
                 else:
-                    dq = f"SELECT District, SUM(Transaction_count) as Value FROM Map_insurance WHERE Year={year} AND Quarter={q_num} GROUP BY District ORDER BY Value DESC LIMIT 10"
-                df_d = run_query(dq)
-                if not df_d.empty:
-                    for i, row in df_d.reset_index(drop=True).iterrows():
+                    district_query = f"""
+                        SELECT District, SUM(Transaction_count) as Value
+                        FROM Map_insurance
+                        WHERE Year={selected_year} AND Quarter={selected_quarter}
+                        GROUP BY District
+                        ORDER BY Value DESC
+                        LIMIT 10
+                    """
+
+                df_district = run_sql(district_query)
+
+                if not df_district.empty:
+                    for i, row in df_district.reset_index(drop=True).iterrows():
                         district_name = row["District"] if pd.notna(row["District"]) and row["District"] else "Unknown"
                         st.markdown(f"""
-                            <div class='top-state-row'>
-                                <span class='top-state-rank'>{i+1}.</span>
-                                <span class='top-state-name'>{district_name}</span>
-                                <span class='top-state-value'>{row['Value']:,.0f}</span>
+                            <div class='top-row'>
+                                <span class='rank'>{i+1}.</span>
+                                <span class='name'>{district_name}</span>
+                                <span class='value'>{row['Value']:,.0f}</span>
                             </div>
                         """, unsafe_allow_html=True)
 
-            with col_p:
+            # top pincodes
+            with c3:
                 st.markdown("<div class='section-header'>Top 10 Pincodes</div>", unsafe_allow_html=True)
-                if data_type == "Transactions":
-                    pq = f"SELECT EntityName, SUM(Transaction_count) as Value FROM top_map WHERE Year={year} AND Quarter={q_num} AND Level='pincode' GROUP BY EntityName ORDER BY Value DESC LIMIT 10"
-                elif data_type == "Users":
-                    pq = f"SELECT Name as EntityName, SUM(Registered_users) as Value FROM Top_user WHERE Year={year} AND Quarter={q_num} AND Level='pincode' GROUP BY Name ORDER BY Value DESC LIMIT 10"
+
+                if selected_type == "Transactions":
+                    pincode_query = f"""
+                        SELECT EntityName, SUM(Transaction_count) as Value
+                        FROM top_map
+                        WHERE Year={selected_year} AND Quarter={selected_quarter} AND Level='pincode'
+                        GROUP BY EntityName
+                        ORDER BY Value DESC
+                        LIMIT 10
+                    """
+                elif selected_type == "Users":
+                    pincode_query = f"""
+                        SELECT Name as EntityName, SUM(Registered_users) as Value
+                        FROM Top_user
+                        WHERE Year={selected_year} AND Quarter={selected_quarter} AND Level='pincode'
+                        GROUP BY Name
+                        ORDER BY Value DESC
+                        LIMIT 10
+                    """
                 else:
-                    pq = f"SELECT EntityName, SUM(Transaction_count) as Value FROM top_insurance WHERE Year={year} AND Quarter={q_num} AND Level='pincode' GROUP BY EntityName ORDER BY Value DESC LIMIT 10"
-                df_p = run_query(pq)
-                if not df_p.empty:
-                    for i, row in df_p.reset_index(drop=True).iterrows():
-                        entity_name = row["EntityName"] if pd.notna(row["EntityName"]) and row["EntityName"] else "Unknown"
+                    pincode_query = f"""
+                        SELECT EntityName, SUM(Transaction_count) as Value
+                        FROM top_insurance
+                        WHERE Year={selected_year} AND Quarter={selected_quarter} AND Level='pincode'
+                        GROUP BY EntityName
+                        ORDER BY Value DESC
+                        LIMIT 10
+                    """
+
+                df_pincode = run_sql(pincode_query)
+
+                if not df_pincode.empty:
+                    for i, row in df_pincode.reset_index(drop=True).iterrows():
+                        pincode_name = row["EntityName"] if pd.notna(row["EntityName"]) and row["EntityName"] else "Unknown"
                         st.markdown(f"""
-                            <div class='top-state-row'>
-                                <span class='top-state-rank'>{i+1}.</span>
-                                <span class='top-state-name'>{entity_name}</span>
-                                <span class='top-state-value'>{row['Value']:,.0f}</span>
+                            <div class='top-row'>
+                                <span class='rank'>{i+1}.</span>
+                                <span class='name'>{pincode_name}</span>
+                                <span class='value'>{row['Value']:,.0f}</span>
                             </div>
                         """, unsafe_allow_html=True)
 
 
 # ============================================================
-# ANALYTICS PAGE (MODIFIED - Removed right color scale only)
+# ANALYTICS PAGE
 # ============================================================
 
 elif menu == "📈 Analytics":
 
-    st.markdown("<h1 style='text-align: center; color: white;'>📈 Advanced Analytics</h1>",
-                unsafe_allow_html=True)
+    st.markdown(
+        "<h1 style='text-align: center; color: white;'>Advanced Analytics</h1>",
+        unsafe_allow_html=True
+    )
     st.markdown("<br>", unsafe_allow_html=True)
 
-    if not db_name:
-        st.warning("No database found. Run ETL first.")
+    if not latest_db:
+        st.warning("No database found. Please run ETL first.")
     else:
-        ac1, ac2, ac3 = st.columns(3)
-        with ac1:
-            a_type = st.selectbox("Analysis Type", ["Transactions", "Users", "Insurance"], key="a_type")
-        with ac2:
-            a_year = st.selectbox("Year", [2024, 2023, 2022, 2021, 2020, 2019, 2018], key="a_year")
-        with ac3:
-            a_quarter = st.selectbox("Quarter", [1, 2, 3, 4], key="a_quarter")
+        a1, a2, a3 = st.columns(3)
+
+        with a1:
+            analysis_type = st.selectbox("Analysis Type", ["Transactions", "Users", "Insurance"])
+        with a2:
+            analysis_year = st.selectbox("Year", [2024, 2023, 2022, 2021, 2020, 2019, 2018])
+        with a3:
+            analysis_quarter = st.selectbox("Quarter", [1, 2, 3, 4])
 
         st.markdown("---")
 
-        # Row 1: Bar Chart + Pie Chart
-        r1c1, r1c2 = st.columns(2, gap="large")
+        # -------------------------
+        # row 1 charts
+        # -------------------------
+        left_chart, right_chart = st.columns(2, gap="large")
 
-        with r1c1:
-            st.markdown("<div class='chart-title'>📊 Top 10 States</div>", unsafe_allow_html=True)
-            if a_type == "Transactions":
-                bar_query = f"SELECT State, SUM(Transaction_amount) as Value FROM Aggregated_transaction WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY State ORDER BY Value DESC LIMIT 10"
-            elif a_type == "Users":
-                bar_query = f"SELECT State, SUM(Registered_users) as Value FROM Map_user WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY State ORDER BY Value DESC LIMIT 10"
+        with left_chart:
+            st.markdown("<div class='chart-title'>Top 10 States</div>", unsafe_allow_html=True)
+
+            if analysis_type == "Transactions":
+                bar_query = f"""
+                    SELECT State, SUM(Transaction_amount) as Value
+                    FROM Aggregated_transaction
+                    WHERE Year={analysis_year} AND Quarter={analysis_quarter}
+                    GROUP BY State
+                    ORDER BY Value DESC
+                    LIMIT 10
+                """
+            elif analysis_type == "Users":
+                bar_query = f"""
+                    SELECT State, SUM(Registered_users) as Value
+                    FROM Map_user
+                    WHERE Year={analysis_year} AND Quarter={analysis_quarter}
+                    GROUP BY State
+                    ORDER BY Value DESC
+                    LIMIT 10
+                """
             else:
-                bar_query = f"SELECT State, SUM(Transaction_amount) as Value FROM Aggregated_insurance WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY State ORDER BY Value DESC LIMIT 10"
+                bar_query = f"""
+                    SELECT State, SUM(Transaction_amount) as Value
+                    FROM Aggregated_insurance
+                    WHERE Year={analysis_year} AND Quarter={analysis_quarter}
+                    GROUP BY State
+                    ORDER BY Value DESC
+                    LIMIT 10
+                """
 
-            df_bar = run_query(bar_query)
+            df_bar = run_sql(bar_query)
+
             if not df_bar.empty:
                 df_bar["State_Name"] = df_bar["State"].map(lambda x: STATE_NAMES.get(x, x))
-                fig_bar = create_bar_chart(df_bar, "State_Name", "Value", f"Top 10 States - {a_type}")
-                st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
+                fig_bar = make_bar_chart(df_bar, "State_Name", "Value", f"Top 10 States - {analysis_type}")
+                st.pyplot(fig_bar)
+                plt.close(fig_bar)
 
-        with r1c2:
-            st.markdown("<div class='chart-title'>🥧 Category Distribution</div>", unsafe_allow_html=True)
-            if a_type == "Transactions":
-                pie_query = f"SELECT Transaction_type as Category, SUM(Transaction_count) as Value FROM Aggregated_transaction WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY Transaction_type"
-            elif a_type == "Users":
-                pie_query = f"SELECT Transaction_brand as Category, SUM(Transaction_count) as Value FROM Aggregated_user WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY Transaction_brand"
+        with right_chart:
+            st.markdown("<div class='chart-title'>Category Distribution</div>", unsafe_allow_html=True)
+
+            if analysis_type == "Transactions":
+                pie_query = f"""
+                    SELECT Transaction_type as Category, SUM(Transaction_count) as Value
+                    FROM Aggregated_transaction
+                    WHERE Year={analysis_year} AND Quarter={analysis_quarter}
+                    GROUP BY Transaction_type
+                """
+            elif analysis_type == "Users":
+                pie_query = f"""
+                    SELECT Transaction_brand as Category, SUM(Transaction_count) as Value
+                    FROM Aggregated_user
+                    WHERE Year={analysis_year} AND Quarter={analysis_quarter}
+                    GROUP BY Transaction_brand
+                """
             else:
-                pie_query = f"SELECT Transaction_type as Category, SUM(Transaction_count) as Value FROM Aggregated_insurance WHERE Year={a_year} AND Quarter={a_quarter} GROUP BY Transaction_type"
+                pie_query = f"""
+                    SELECT Transaction_type as Category, SUM(Transaction_count) as Value
+                    FROM Aggregated_insurance
+                    WHERE Year={analysis_year} AND Quarter={analysis_quarter}
+                    GROUP BY Transaction_type
+                """
 
-            df_pie = run_query(pie_query)
+            df_pie = run_sql(pie_query)
+
             if not df_pie.empty:
                 df_pie = df_pie.dropna(subset=["Category"])
                 if not df_pie.empty:
-                    fig_pie = create_pie_chart(df_pie, "Category", "Value", f"{a_type} Distribution")
-                    st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
+                    fig_pie = make_pie_chart(df_pie, "Category", "Value", f"{analysis_type} Distribution")
+                    st.pyplot(fig_pie)
+                    plt.close(fig_pie)
 
-        # Row 2: Line Chart (Full Width)
-        st.markdown("<div class='chart-title'>📈 Quarterly Trend Analysis</div>", unsafe_allow_html=True)
-        if a_type == "Transactions":
-            line_query = "SELECT Year, Quarter, SUM(Transaction_amount) as Value FROM Aggregated_transaction GROUP BY Year, Quarter ORDER BY Year, Quarter"
-        elif a_type == "Users":
-            line_query = "SELECT Year, Quarter, SUM(Registered_users) as Value FROM Map_user GROUP BY Year, Quarter ORDER BY Year, Quarter"
+        # -------------------------
+        # row 2 line chart
+        # -------------------------
+        st.markdown("<div class='chart-title'>Quarterly Trend Analysis</div>", unsafe_allow_html=True)
+
+        if analysis_type == "Transactions":
+            line_query = """
+                SELECT Year, Quarter, SUM(Transaction_amount) as Value
+                FROM Aggregated_transaction
+                GROUP BY Year, Quarter
+                ORDER BY Year, Quarter
+            """
+        elif analysis_type == "Users":
+            line_query = """
+                SELECT Year, Quarter, SUM(Registered_users) as Value
+                FROM Map_user
+                GROUP BY Year, Quarter
+                ORDER BY Year, Quarter
+            """
         else:
-            line_query = "SELECT Year, Quarter, SUM(Transaction_amount) as Value FROM Aggregated_insurance GROUP BY Year, Quarter ORDER BY Year, Quarter"
+            line_query = """
+                SELECT Year, Quarter, SUM(Transaction_amount) as Value
+                FROM Aggregated_insurance
+                GROUP BY Year, Quarter
+                ORDER BY Year, Quarter
+            """
 
-        df_line = run_query(line_query)
+        df_line = run_sql(line_query)
+
         if not df_line.empty:
             df_line["Period"] = df_line["Year"].astype(str) + "-Q" + df_line["Quarter"].astype(str)
-            fig_line = create_line_chart(df_line, "Period", "Value", f"{a_type} - Quarterly Trend")
-            st.plotly_chart(fig_line, use_container_width=True, config={"displayModeBar": False})
+            fig_line = make_line_chart(df_line, "Period", "Value", f"{analysis_type} Quarterly Trend")
+            st.pyplot(fig_line)
+            plt.close(fig_line)
 
-        # Row 3: Year-over-Year Comparison (Full Width) - MODIFIED
-        st.markdown("<div class='chart-title'>📊 Year-over-Year Comparison</div>", unsafe_allow_html=True)
-        if a_type == "Transactions":
-            yoy_query = f"SELECT Year, SUM(Transaction_amount) as Value FROM Aggregated_transaction WHERE Quarter={a_quarter} GROUP BY Year ORDER BY Year"
-        elif a_type == "Users":
-            yoy_query = f"SELECT Year, SUM(Registered_users) as Value FROM Map_user WHERE Quarter={a_quarter} GROUP BY Year ORDER BY Year"
+        # -------------------------
+        # row 3 yoy chart
+        # -------------------------
+        st.markdown("<div class='chart-title'>Year-over-Year Comparison</div>", unsafe_allow_html=True)
+
+        if analysis_type == "Transactions":
+            year_query = f"""
+                SELECT Year, SUM(Transaction_amount) as Value
+                FROM Aggregated_transaction
+                WHERE Quarter={analysis_quarter}
+                GROUP BY Year
+                ORDER BY Year
+            """
+        elif analysis_type == "Users":
+            year_query = f"""
+                SELECT Year, SUM(Registered_users) as Value
+                FROM Map_user
+                WHERE Quarter={analysis_quarter}
+                GROUP BY Year
+                ORDER BY Year
+            """
         else:
-            yoy_query = f"SELECT Year, SUM(Transaction_amount) as Value FROM Aggregated_insurance WHERE Quarter={a_quarter} GROUP BY Year ORDER BY Year"
+            year_query = f"""
+                SELECT Year, SUM(Transaction_amount) as Value
+                FROM Aggregated_insurance
+                WHERE Quarter={analysis_quarter}
+                GROUP BY Year
+                ORDER BY Year
+            """
 
-        df_yoy = run_query(yoy_query)
-        if not df_yoy.empty:
-            df_yoy["Year"] = df_yoy["Year"].astype(str)
-            fig_yoy = px.bar(df_yoy, x="Year", y="Value", title=f"Q{a_quarter} - Year Comparison",
-                             color="Value", color_continuous_scale="Viridis", text="Value")
-            fig_yoy.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
-            fig_yoy.update_layout(
-                **CHART_TEMPLATE, 
-                height=400, 
-                showlegend=False,
-                coloraxis_showscale=False  # MODIFIED: Remove right color scale
-            )
-            st.plotly_chart(fig_yoy, use_container_width=True, config={"displayModeBar": False})
+        df_year = run_sql(year_query)
+
+        if not df_year.empty:
+            df_year["Year"] = df_year["Year"].astype(str)
+            fig_year = make_year_chart(df_year, f"Q{analysis_quarter} Year Comparison")
+            st.pyplot(fig_year)
+            plt.close(fig_year)
 
 
 # ============================================================
-# ETL PIPELINE PAGE
+# ETL PAGE
 # ============================================================
 
 elif menu == "🔄 Run ETL Pipeline":
 
-    st.markdown("<h1 style='text-align: center; color: white;'>ETL Pipeline</h1>", unsafe_allow_html=True)
+    st.markdown(
+        "<h1 style='text-align: center; color: white;'>Run ETL Pipeline</h1>",
+        unsafe_allow_html=True
+    )
     st.markdown("<br>", unsafe_allow_html=True)
 
     st.markdown("""
-    <p style='color: #d1d5db; font-size: 1.1rem;'>
-    This will process all PhonePe Pulse JSON data and load it into a new MySQL database.
-    <br><br><b>Steps:</b><br>
-    1. Create a new MySQL database<br>
-    2. Create all 9 tables<br>
-    3. Read JSON files from each category<br>
-    4. Export data as CSV files<br>
-    5. Load data into MySQL tables
+    <p style='color: #d1d5db; font-size: 1.05rem;'>
+    This page will:
+    <br>1. Create a new MySQL database
+    <br>2. Create all required tables
+    <br>3. Read JSON files from project folders
+    <br>4. Save CSV copies
+    <br>5. Load everything into MySQL
     </p>
     """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    if st.button("🚀 Start ETL Pipeline", type="primary"):
-        status = st.container()
-        with st.spinner("Running ETL Pipeline... This may take a few minutes."):
+    if st.button("Start ETL Pipeline"):
+        status_area = st.container()
+
+        with st.spinner("Running ETL pipeline... please wait"):
             try:
-                new_db = run_etl_pipeline(status)
+                db_created = run_full_etl(status_area)
                 st.balloons()
-                st.success(f"🎉 ETL Complete! Database: {new_db}")
+                st.success(f"ETL completed successfully. New database: {db_created}")
             except Exception as e:
-                st.error(f"ETL Failed: {e}")
+                st.error(f"ETL failed: {e}")
 
 
 # ============================================================
@@ -906,30 +1338,43 @@ elif menu == "🔄 Run ETL Pipeline":
 
 elif menu == "📊 Data Explorer":
 
-    st.markdown("<h1 style='text-align: center; color: white;'>Data Explorer</h1>", unsafe_allow_html=True)
+    st.markdown(
+        "<h1 style='text-align: center; color: white;'>Data Explorer</h1>",
+        unsafe_allow_html=True
+    )
     st.markdown("<br>", unsafe_allow_html=True)
 
-    if not db_name:
-        st.warning("No database found. Run ETL first.")
+    if not latest_db:
+        st.warning("No database found. Please run ETL first.")
     else:
-        table = st.selectbox("Select Table", [
-            "Aggregated_transaction", "Aggregated_insurance", "Aggregated_user",
-            "Map_transaction", "Map_insurance", "Map_user",
-            "top_map", "top_insurance", "Top_user"
-        ])
-        limit = st.slider("Number of rows", 10, 1000, 100)
+        selected_table = st.selectbox(
+            "Select Table",
+            [
+                "Aggregated_transaction",
+                "Aggregated_insurance",
+                "Aggregated_user",
+                "Map_transaction",
+                "Map_insurance",
+                "Map_user",
+                "top_map",
+                "top_insurance",
+                "Top_user"
+            ]
+        )
 
-        df = run_query(f"SELECT * FROM `{table}` LIMIT {limit}")
+        row_limit = st.slider("Number of rows", 10, 1000, 100)
 
-        if not df.empty:
-            st.markdown(f"**Showing {len(df)} rows from `{table}`**")
-            st.dataframe(df, use_container_width=True)
+        df_table = run_sql(f"SELECT * FROM `{selected_table}` LIMIT {row_limit}")
 
-            csv = df.to_csv(index=False)
+        if not df_table.empty:
+            st.markdown(f"Showing {len(df_table)} rows from `{selected_table}`")
+            st.dataframe(df_table, use_container_width=True)
+
+            csv_data = df_table.to_csv(index=False)
             st.download_button(
-                label="📥 Download as CSV",
-                data=csv,
-                file_name=f"{table}_export.csv",
+                label="Download as CSV",
+                data=csv_data,
+                file_name=f"{selected_table}.csv",
                 mime="text/csv"
             )
         else:
