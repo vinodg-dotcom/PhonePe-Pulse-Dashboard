@@ -3,4 +3,5 @@ pandas
 plotly
 sqlalchemy
 mysql-connector-python
+seaborn matplotlib
 ##pip install -r requirements.txt
