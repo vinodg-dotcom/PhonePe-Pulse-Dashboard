@@ -63,6 +63,7 @@ The following software must be installed before running this project:
 | plotly | Charts and India map |
 | sqlalchemy | Database connection engine |
 | mysql-connector-python | MySQL driver for Python |
+| seaborn | Plotting the graphs |
 
 Install all packages at once:
 ```bash
