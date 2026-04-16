@@ -501,6 +501,8 @@ def read_one_category(folder_path, category):
 
                 # map user
                 elif category == "map_user_hover":
+                    #payment_info = item["paymentInstruments"][0]
+                    ## for district, metrics in data["hoverData"].items():
                     for district, metrics in (data.get("hoverData") or {}).items():
                         data_dict["State"].append(state)
                         data_dict["Year"].append(int(year))
