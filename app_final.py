@@ -460,6 +460,11 @@ def read_one_category(folder_path, category):
                 if category in ["aggr_transaction", "aggr_insurance"]:
                     for item in data.get("transactionData", []) or []:
                         payment_info = (item.get("paymentInstruments") or [{}])[0]
+                        #payment_list = item.get("paymentInstruments")
+                        #if payment_list is not None and len(payment_list) > 0:
+                            #payment_info = payment_list[0]
+                        #else:
+                            #payment_info = {}
 
                         data_dict["State"].append(state)
                         data_dict["Year"].append(int(year))
