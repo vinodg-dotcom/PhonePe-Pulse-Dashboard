@@ -572,7 +572,9 @@ def insert_dataframe_to_mysql(df, table_name, engine):
     # insert dataframe rows into mysql table
     if df.empty:
         return 0
-
+    #df.to_sql(table_name, con=engine, if_exists='append', index=False)
+    #return len(df)
+    
     columns = ", ".join(f"`{col}`" for col in df.columns)
     placeholders = ", ".join(f":{col}" for col in df.columns)
     query = text(f"INSERT INTO `{table_name}` ({columns}) VALUES ({placeholders})")
