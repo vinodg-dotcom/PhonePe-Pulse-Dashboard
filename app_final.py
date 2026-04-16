@@ -476,6 +476,7 @@ def read_one_category(folder_path, category):
                 # aggregated user
                 elif category == "aggr_user":
                     total_users = data.get("aggregated", {}).get("registeredUsers", 0)
+                    #total_users = data["aggregated"]["registeredUsers"] -- to avoid keyError
 
                     for device in data.get("usersByDevice") or []:
                         data_dict["State"].append(state)
